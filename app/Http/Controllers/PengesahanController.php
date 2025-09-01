@@ -19,21 +19,18 @@ class PengesahanController extends BaseController
                 'pengajuan.kategori'
             ]);
 
-            // Filter by id_mahasiswa
             if ($request->has('id_mahasiswa')) {
                 $query->whereHas('pengajuan.mahasiswa', function ($q) use ($request) {
                     $q->where('id_mahasiswa', $request->id_mahasiswa);
                 });
             }
 
-            // Filter by id_prodi
             if ($request->has('id_prodi')) {
                 $query->whereHas('pengajuan.mahasiswa.prodi', function ($q) use ($request) {
                     $q->where('id_prodi', $request->id_prodi);
                 });
             }
 
-            // Filter by id_fakultas
             if ($request->has('id_fakultas')) {
                 $query->whereHas('fakultas', function ($q) use ($request) {
                     $q->where('id_fakultas', $request->id_fakultas);
@@ -54,21 +51,33 @@ class PengesahanController extends BaseController
         }
     }
 
-
     public function store(Request $request)
     {
         try {
             Log::info('Storing pengesahan:', $request->all());
+
             $validated = $request->validate([
-                'id_fakultas' => 'required|exists:tb_fakultas,id_fakultas',
-                'id_pengajuan' => 'required|exists:tb_pengajuan,id_pengajuan',
-                'tgl_pengesahan' => 'required|date',
-                'nomor_pengesahan' => 'required|string'
+                'id_fakultas'      => 'required|exists:tb_fakultas,id_fakultas',
+                'id_pengajuan'     => 'required|exists:tb_pengajuan,id_pengajuan',
+                'tgl_pengesahan'   => 'required|date',
+                'nomor_pengesahan' => 'required|string',
             ]);
+
+            // ❗ Cegah duplikasi: satu pengesahan per pengajuan
+            $exists = Pengesahan::where('id_pengajuan', $validated['id_pengajuan'])->exists();
+            if ($exists) {
+                return response()->json([
+                    'message' => 'Pengesahan sudah ada untuk pengajuan ini'
+                ], 409);
+            }
 
             $pengesahan = Pengesahan::create($validated);
 
-            return response()->json(['message' => 'Pengesahan created successfully', 'data' => $pengesahan], 201);
+            return response()->json([
+                'message' => 'Pengesahan created successfully',
+                'data' => $pengesahan
+            ], 201);
+
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
         } catch (\Exception $e) {
@@ -95,15 +104,32 @@ class PengesahanController extends BaseController
             Log::info('Updating pengesahan:', $request->all());
 
             $validated = $request->validate([
-                'id_fakultas' => 'sometimes|exists:tb_fakultas,id_fakultas',
-                'id_pengajuan' => 'sometimes|exists:tb_pengajuan,id_pengajuan',
-                'tgl_pengesahan' => 'sometimes|date',
-                'nomor_pengesahan' => 'sometimes|string'
+                'id_fakultas'      => 'sometimes|exists:tb_fakultas,id_fakultas',
+                'id_pengajuan'     => 'sometimes|exists:tb_pengajuan,id_pengajuan',
+                'tgl_pengesahan'   => 'sometimes|date',
+                'nomor_pengesahan' => 'sometimes|string',
             ]);
+
+            // ❗ Jika id_pengajuan diubah, pastikan tidak menabrak pengesahan lain
+            if (array_key_exists('id_pengajuan', $validated)) {
+                $pkName = $pengesahan->getKeyName(); // contoh: id_pengesahan
+                $pkVal  = $pengesahan->getKey();
+
+                $conflict = Pengesahan::where('id_pengajuan', $validated['id_pengajuan'])
+                    ->where($pkName, '!=', $pkVal)
+                    ->exists();
+
+                if ($conflict) {
+                    return response()->json([
+                        'message' => 'Pengesahan untuk pengajuan tersebut sudah ada'
+                    ], 409);
+                }
+            }
 
             $pengesahan->update($validated);
 
             return response()->json(['message' => 'Pengesahan updated successfully', 'data' => $pengesahan], 200);
+
         } catch (ModelNotFoundException $e) {
             return response()->json(['message' => 'Pengesahan not found'], 404);
         } catch (\Illuminate\Validation\ValidationException $e) {

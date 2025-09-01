@@ -10,13 +10,13 @@ use App\Http\Controllers\{
     PengesahanController,
     CplController,
     CplSkorController,
-    IsiCapaianController,
     CetakController,
     KerjaPraktekController,
     TugasAkhirController,
     SertifikasiController,
     SuperAdminController,
-    LoginController
+    LoginController,
+    CplMasterController // ⬅️ tambah ini
 };
 
 // Login routes
@@ -24,8 +24,6 @@ Route::post('/login/superadmin', [LoginController::class, 'loginSuperAdmin']);
 Route::post('/login/fakultas', [LoginController::class, 'loginFakultas']);
 Route::post('/login/prodi', [LoginController::class, 'loginProdi']);
 Route::post('/login/mahasiswa', [LoginController::class, 'loginMahasiswa']);
-
-
 
 // Auto-generated routes for all CRUD controllers
 Route::apiResource('mahasiswa', MahasiswaController::class);
@@ -36,11 +34,15 @@ Route::apiResource('pengajuan', PengajuanController::class);
 Route::apiResource('pengesahan', PengesahanController::class);
 Route::apiResource('cpl', CplController::class);
 Route::apiResource('cpl-skor', CplSkorController::class);
-Route::apiResource('isi-capaian', IsiCapaianController::class);
+Route::apiResource('cpl-master', CplMasterController::class); // ⬅️ route baru
 Route::apiResource('cetak', CetakController::class);
 Route::apiResource('kerja-praktek', KerjaPraktekController::class);
 Route::apiResource('tugas-akhir', TugasAkhirController::class);
 Route::apiResource('sertifikasi', SertifikasiController::class);
 Route::apiResource('super-admin', SuperAdminController::class);
-Route::get('/pengesahan/print/{id}', [PengesahanController::class, 'getPengesahanDetail']);
 
+// Extra routes
+Route::get('/pengesahan/print/{id}', [PengesahanController::class, 'getPengesahanDetail']);
+Route::get('mahasiswa-import-template', [MahasiswaController::class, 'template']);
+Route::post('mahasiswa-import', [MahasiswaController::class, 'import']);
+Route::post('cpl-skor-bulk', [CplSkorController::class, 'bulkUpsert']);

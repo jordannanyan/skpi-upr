@@ -15,19 +15,16 @@ class PengajuanController extends BaseController
         try {
             $query = Pengajuan::with(['mahasiswa.prodi.fakultas', 'kategori']);
 
-            // Filter by id_mahasiswa (direct)
             if ($request->has('id_mahasiswa')) {
                 $query->where('id_mahasiswa', $request->id_mahasiswa);
             }
 
-            // Optional filter by id_prodi
             if ($request->has('id_prodi')) {
                 $query->whereHas('mahasiswa.prodi', function ($q) use ($request) {
                     $q->where('id_prodi', $request->id_prodi);
                 });
             }
 
-            // Optional filter by id_fakultas
             if ($request->has('id_fakultas')) {
                 $query->whereHas('mahasiswa.prodi.fakultas', function ($q) use ($request) {
                     $q->where('id_fakultas', $request->id_fakultas);
@@ -48,21 +45,32 @@ class PengajuanController extends BaseController
         }
     }
 
-
     public function store(Request $request)
     {
         try {
             Log::info('Storing pengajuan:', $request->all());
+
             $validated = $request->validate([
-                'id_mahasiswa' => 'required|exists:tb_mahasiswa,id_mahasiswa',
-                'id_kategori' => 'required|exists:tb_kategori,id_kategori',
-                'status' => 'required|in:aktif,noaktif',
-                'tgl_pengajuan' => 'required|date'
+                'id_mahasiswa'   => 'required|exists:tb_mahasiswa,id_mahasiswa',
+                'id_kategori'    => 'required|exists:tb_kategori,id_kategori',
+                'status'         => 'required|in:aktif,noaktif',
+                'tgl_pengajuan'  => 'required|date',
             ]);
+
+            // ❗ Cegah duplikasi pengajuan per mahasiswa
+            $already = Pengajuan::where('id_mahasiswa', $validated['id_mahasiswa'])->exists();
+            if ($already) {
+                return response()->json([
+                    'message' => 'Pengajuan sudah ada untuk mahasiswa ini'
+                ], 409);
+            }
 
             $pengajuan = Pengajuan::create($validated);
 
-            return response()->json(['message' => 'Pengajuan created successfully', 'data' => $pengajuan], 201);
+            return response()->json([
+                'message' => 'Pengajuan created successfully',
+                'data' => $pengajuan
+            ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
         } catch (\Exception $e) {
@@ -89,11 +97,27 @@ class PengajuanController extends BaseController
             Log::info('Updating pengajuan:', $request->all());
 
             $validated = $request->validate([
-                'id_mahasiswa' => 'sometimes|exists:tb_mahasiswa,id_mahasiswa',
-                'id_kategori' => 'sometimes|exists:tb_kategori,id_kategori',
-                'status' => 'sometimes|in:aktif,noaktif',
-                'tgl_pengajuan' => 'sometimes|date'
+                'id_mahasiswa'   => 'sometimes|exists:tb_mahasiswa,id_mahasiswa',
+                'id_kategori'    => 'sometimes|exists:tb_kategori,id_kategori',
+                'status'         => 'sometimes|in:aktif,noaktif',
+                'tgl_pengajuan'  => 'sometimes|date'
             ]);
+
+            // ❗ Jaga agar tetap satu pengajuan per mahasiswa saat update
+            if (array_key_exists('id_mahasiswa', $validated)) {
+                $pkName = $pengajuan->getKeyName();   // menangani pk kustom
+                $pkVal  = $pengajuan->getKey();
+
+                $conflict = Pengajuan::where('id_mahasiswa', $validated['id_mahasiswa'])
+                    ->where($pkName, '!=', $pkVal)
+                    ->exists();
+
+                if ($conflict) {
+                    return response()->json([
+                        'message' => 'Mahasiswa tersebut sudah memiliki pengajuan'
+                    ], 409);
+                }
+            }
 
             $pengajuan->update($validated);
 

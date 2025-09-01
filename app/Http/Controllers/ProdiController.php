@@ -15,7 +15,6 @@ class ProdiController extends BaseController
         try {
             $query = Prodi::with('fakultas');
 
-            // Optional filter by id_fakultas
             if ($request->has('id_fakultas')) {
                 $query->where('id_fakultas', $request->id_fakultas);
             }
@@ -34,25 +33,36 @@ class ProdiController extends BaseController
         }
     }
 
-
     public function store(Request $request)
     {
         try {
             Log::info('Storing prodi:', $request->all());
+
             $validated = $request->validate([
-                'id_fakultas' => 'required|exists:tb_fakultas,id_fakultas',
-                'nama_prodi' => 'required|string',
-                'username' => 'required|string|unique:tb_prodi,username',
-                'password' => 'required|string',
-                'akreditasi' => 'nullable|string',
-                'sk_akre' => 'nullable|string',
-                'jenis_jenjang' => 'nullable|string',
+                'id_fakultas'      => 'required|exists:tb_fakultas,id_fakultas',
+                'nama_prodi'       => 'required|string|max:255',
+                'username'         => 'required|string|max:100|unique:tb_prodi,username',
+                'password'         => 'required|string|min:8',
+                'akreditasi'       => 'nullable|string',
+                'sk_akre'          => 'nullable|string',
+                'jenis_jenjang'    => 'nullable|string',
                 'kompetensi_kerja' => 'nullable|string',
-                'bahasa' => 'nullable|string',
-                'penilaian' => 'nullable|string',
-                'jenis_lanjutan' => 'nullable|string',
-                'alamat' => 'nullable|string'
+                'bahasa'           => 'nullable|string',
+                'penilaian'        => 'nullable|string',
+                'jenis_lanjutan'   => 'nullable|string',
+                'alamat'           => 'nullable|string'
             ]);
+
+            // ❗ Cegah duplikasi prodi per fakultas (case-insensitive pada nama_prodi)
+            $exists = Prodi::where('id_fakultas', $validated['id_fakultas'])
+                ->whereRaw('LOWER(nama_prodi) = ?', [mb_strtolower($validated['nama_prodi'])])
+                ->exists();
+
+            if ($exists) {
+                return response()->json([
+                    'message' => 'Akun Prodi dengan nama tersebut sudah ada pada fakultas yang sama'
+                ], 409);
+            }
 
             $validated['password'] = bcrypt($validated['password']);
             $prodi = Prodi::create($validated);
@@ -84,19 +94,36 @@ class ProdiController extends BaseController
             Log::info('Updating prodi:', $request->all());
 
             $validated = $request->validate([
-                'id_fakultas' => 'sometimes|exists:tb_fakultas,id_fakultas',
-                'nama_prodi' => 'sometimes|string',
-                'username' => 'sometimes|string|unique:tb_prodi,username,' . $id . ',id_prodi',
-                'password' => 'sometimes|string',
-                'akreditasi' => 'nullable|string',
-                'sk_akre' => 'nullable|string',
-                'jenis_jenjang' => 'nullable|string',
+                'id_fakultas'      => 'sometimes|exists:tb_fakultas,id_fakultas',
+                'nama_prodi'       => 'sometimes|string|max:255',
+                'username'         => 'sometimes|string|max:100|unique:tb_prodi,username,' . $id . ',id_prodi',
+                'password'         => 'sometimes|string|min:8',
+                'akreditasi'       => 'nullable|string',
+                'sk_akre'          => 'nullable|string',
+                'jenis_jenjang'    => 'nullable|string',
                 'kompetensi_kerja' => 'nullable|string',
-                'bahasa' => 'nullable|string',
-                'penilaian' => 'nullable|string',
-                'jenis_lanjutan' => 'nullable|string',
-                'alamat' => 'nullable|string'
+                'bahasa'           => 'nullable|string',
+                'penilaian'        => 'nullable|string',
+                'jenis_lanjutan'   => 'nullable|string',
+                'alamat'           => 'nullable|string'
             ]);
+
+            // ❗ Jika nama_prodi/id_fakultas berubah, pastikan tidak menabrak prodi lain di fakultas yang sama
+            if (array_key_exists('nama_prodi', $validated) || array_key_exists('id_fakultas', $validated)) {
+                $targetFak = $validated['id_fakultas'] ?? $prodi->id_fakultas;
+                $targetNama= $validated['nama_prodi']  ?? $prodi->nama_prodi;
+
+                $conflict = Prodi::where('id_fakultas', $targetFak)
+                    ->whereRaw('LOWER(nama_prodi) = ?', [mb_strtolower($targetNama)])
+                    ->where('id_prodi', '!=', $id)
+                    ->exists();
+
+                if ($conflict) {
+                    return response()->json([
+                        'message' => 'Akun Prodi dengan nama tersebut sudah ada pada fakultas yang sama'
+                    ], 409);
+                }
+            }
 
             if (isset($validated['password'])) {
                 $validated['password'] = bcrypt($validated['password']);
