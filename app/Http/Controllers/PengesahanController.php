@@ -152,45 +152,41 @@ class PengesahanController extends BaseController
         }
     }
 
-    public function getPengesahanDetail($id)
-    {
-        try {
-            $pengesahan = Pengesahan::with([
-                'fakultas',
-                'pengajuan.kategori',
-                'pengajuan.mahasiswa.prodi.fakultas',
-                'pengajuan.mahasiswa.kerjaPraktek',
-                'pengajuan.mahasiswa.tugasAkhir',
-                'pengajuan.mahasiswa.sertifikasi',
-                'pengajuan.mahasiswa.cplSkors.cpl',
-                'pengajuan.mahasiswa.cplSkors.isiCapaian',
-            ])->findOrFail($id);
+public function getPengesahanDetail($id)
+{
+    try {
+        $pengesahan = Pengesahan::with([
+            'fakultas',
+            'pengajuan.kategori',
+            'pengajuan.mahasiswa.prodi.fakultas',
+            'pengajuan.mahasiswa.kerjaPraktek',
+            'pengajuan.mahasiswa.tugasAkhir',
+            'pengajuan.mahasiswa.sertifikasi',
+            'pengajuan.mahasiswa.cplSkors.cplMaster', // baru
+        ])->findOrFail($id);
 
-            $cplData = $pengesahan->pengajuan->mahasiswa->cplSkors->map(function ($cplSkor) {
-                return [
-                    'id_cpl' => $cplSkor->cpl->id_cpl,
-                    'nama_cpl' => $cplSkor->cpl->nama_cpl,
-                    'skor_cpl' => $cplSkor->skor_cpl,
-                    'isi_capaian' => collect($cplSkor->isiCapaian)->map(function ($isi) {
-                        return [
-                            'id_capaian' => $isi->id_capaian,
-                            'deskripsi_indo' => $isi->deskripsi_indo,
-                            'deskripsi_inggris' => $isi->deskripsi_inggris,
-                        ];
-                    })
-                ];
-            });
+        // Map ke bentuk CPL Master yang baru
+        $cplData = $pengesahan->pengajuan->mahasiswa->cplSkors->map(function ($skor) {
+            $cm = $skor->cplMaster; // relasi baru
+            return [
+                'id_cpl_master' => $cm->id_cpl_master ?? null,
+                'deskripsi'     => $cm->deskripsi     ?? null,
+                'kode'          => $cm->kode          ?? null,   // opsional, kalau masih ada di schema
+                'skor_cpl'      => (float) ($skor->skor_cpl ?? 0),
+            ];
+        })->values();
 
-            return response()->json([
-                'message' => 'Data pengesahan detail berhasil diambil',
-                'data' => $pengesahan,
-                'cpl_data' => $cplData,
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Gagal mengambil data pengesahan detail',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message'  => 'Data pengesahan detail berhasil diambil',
+            'data'     => $pengesahan,
+            'cpl_data' => $cplData,
+        ], 200);
+    } catch (\Throwable $e) {
+        return response()->json([
+            'message' => 'Gagal mengambil data pengesahan detail',
+            'error'   => $e->getMessage(),
+        ], 500);
     }
+}
+
 }
