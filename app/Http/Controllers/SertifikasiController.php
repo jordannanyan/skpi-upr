@@ -35,6 +35,21 @@ class SertifikasiController extends BaseController
                 });
             }
 
+            if ($request->has('q')) {
+                // $query->whereHas('mahasiswa', function ($q) use ($request) {
+                //     $q->where('nama_mahasiswa', 'like', '%' . $request->q . '%');
+                // });
+                // Group the search conditions to ensure proper OR logic
+                $query->where(function ($subQuery) use ($request) {
+                    // Search by 'nama_kegiatan' in the current table
+                    $subQuery->where('nama_sertifikasi', 'like', '%' . $request->q . '%')
+                            // OR search by 'nama_mahasiswa' in the related 'mahasiswa' table
+                            ->orWhereHas('mahasiswa', function ($relationQuery) use ($request) {
+                                $relationQuery->where('nama_mahasiswa', 'like', '%' . $request->q . '%');
+                            });
+                });
+            }
+
             $data = $query->get();
 
             return response()->json([
