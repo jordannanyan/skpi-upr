@@ -2,47 +2,49 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Notifications\Notifiable;
+// kalau mau Sanctum nanti:
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use Notifiable;
+    use HasApiTokens; // aman meski belum dipakai sekarang
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
-    protected $fillable = [
-        'name',
-        'email',
-        'password',
+    const ROLES = ['SuperAdmin','Dekan','Wakadek','Kajur','AdminFakultas','AdminJurusan'];
+
+    protected $table = 'users';
+    protected $fillable = ['role','username','password','id_fakultas','id_prodi','remember_token'];
+    protected $hidden   = ['password','remember_token'];
+    protected $casts = [
+        'id_fakultas' => 'integer',
+        'id_prodi'    => 'integer',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
+    # relasi
+    public function fakultas(): BelongsTo { return $this->belongsTo(RefFakultas::class, 'id_fakultas'); }
+    public function prodi(): BelongsTo    { return $this->belongsTo(RefProdi::class, 'id_prodi'); }
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
+    # scope helper buat query data lain
+    public function isFacultyScoped(): bool { return in_array($this->role, ['Dekan','Wakadek','AdminFakultas'], true); }
+    public function isProdiScoped(): bool   { return in_array($this->role, ['Kajur','AdminJurusan'], true); }
+    public function isSuperAdmin(): bool    { return $this->role === 'SuperAdmin'; }
+
+    # hash password otomatis saat set
+    public function setPasswordAttribute($value): void
     {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
+        if (!$value) { return; }
+        // hanya re-hash kalau belum di-hash
+        $this->attributes['password'] = \Illuminate\Support\Facades\Hash::needsRehash($value)
+            ? \Illuminate\Support\Facades\Hash::make($value)
+            : $value;
+    }
+
+    # normalisasi username ke lowercase & trim
+    public function setUsernameAttribute($value): void
+    {
+        $this->attributes['username'] = strtolower(trim((string)$value));
     }
 }

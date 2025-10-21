@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'tik' => [
+    'base' => env('TIK_API_BASE', 'https://tik.upr.ac.id/api'),
+    'key'  => env('TIK_API_KEY', 'F1s#8eL!zYv*W0pR9b@Jm3KuAqT6NABC'),
+    'endpoints' => [
+        'mahasiswa' => '/skpi-mahasiswa',
+        'fakultas'  => '/fakultas',
+        'prodi'     => '/prodi',
+    ],
+],
+
+
 ];

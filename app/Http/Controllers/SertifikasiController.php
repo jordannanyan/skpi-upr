@@ -2,143 +2,125 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\SertifikasiStoreRequest;
+use App\Http\Requests\SertifikasiUpdateRequest;
 use App\Models\Sertifikasi;
 use Illuminate\Http\Request;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Routing\Controller as BaseController;
+use Illuminate\Support\Str;
 
-class SertifikasiController extends BaseController
+class SertifikasiController extends Controller
 {
-    public function index(Request $request)
+    // GET /api/sertifikasi?nim=&prodi_id=&fakultas_id=&q=&per_page=
+    public function index(Request $req)
     {
-        try {
-            $query = Sertifikasi::with('mahasiswa.prodi.fakultas');
+        $perPage = (int) $req->integer('per_page') ?: 25;
 
-            // Optional filter by id_mahasiswa
-            if ($request->has('id_mahasiswa')) {
-                $query->where('id_mahasiswa', $request->id_mahasiswa);
-            }
+        $rows = Sertifikasi::query()
+            ->with(['mahasiswa:nim,nama_mahasiswa,id_prodi'])
+            ->ofNim($req->string('nim'))
+            ->ofProdi($req->integer('prodi_id'))
+            ->ofFakultas($req->integer('fakultas_id'))
+            ->search($req->string('q'))
+            ->latest('id')
+            ->paginate($perPage)
+            ->appends($req->query());
 
-            // Optional filter by id_prodi
-            if ($request->has('id_prodi')) {
-                $query->whereHas('mahasiswa.prodi', function ($q) use ($request) {
-                    $q->where('id_prodi', $request->id_prodi);
-                });
-            }
-
-            // Optional filter by id_fakultas
-            if ($request->has('id_fakultas')) {
-                $query->whereHas('mahasiswa.prodi.fakultas', function ($q) use ($request) {
-                    $q->where('id_fakultas', $request->id_fakultas);
-                });
-            }
-
-            if ($request->has('q')) {
-                // $query->whereHas('mahasiswa', function ($q) use ($request) {
-                //     $q->where('nama_mahasiswa', 'like', '%' . $request->q . '%');
-                // });
-                // Group the search conditions to ensure proper OR logic
-                $query->where(function ($subQuery) use ($request) {
-                    // Search by 'nama_kegiatan' in the current table
-                    $subQuery->where('nama_sertifikasi', 'like', '%' . $request->q . '%')
-                            // OR search by 'nama_mahasiswa' in the related 'mahasiswa' table
-                            ->orWhereHas('mahasiswa', function ($relationQuery) use ($request) {
-                                $relationQuery->where('nama_mahasiswa', 'like', '%' . $request->q . '%');
-                            });
-                });
-            }
-
-            $data = $query->get();
-
-            return response()->json([
-                'message' => 'Sertifikasi fetched successfully',
-                'data' => $data
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to fetch sertifikasi',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json($rows);
     }
 
-
-    public function store(Request $request)
+    // GET /api/sertifikasi/{id}
+    public function show(int $id)
     {
-        try {
-            Log::info('Storing sertifikasi:', $request->all());
-            $validated = $request->validate([
-                'id_mahasiswa' => 'required|exists:tb_mahasiswa,id_mahasiswa',
-                'nama_sertifikasi' => 'required|string',
-                'kategori_sertifikasi' => 'required|string',
-                'file_sertifikat' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048'
-            ]);
+        $row = Sertifikasi::with(['mahasiswa:nim,nama_mahasiswa,id_prodi'])->findOrFail($id);
+        return response()->json($row);
+    }
 
-            if ($request->hasFile('file_sertifikat')) {
-                $validated['file_sertifikat'] = $request->file('file_sertifikat')->store('sertifikasi', 'public');
+    // POST /api/sertifikasi  (multipart/form-data)
+    public function store(SertifikasiStoreRequest $req)
+    {
+        $data = $req->validated();
+        $dir  = Sertifikasi::dir();
+
+        $file = $req->file('file');
+        $safeSlug = Str::slug(substr($data['nama_sertifikasi'], 0, 60), '-');
+        $filename = $data['nim'].'_'.$safeSlug.'_'.Str::random(6).'.'.$file->getClientOriginalExtension();
+
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk('public');
+        $disk->putFileAs($dir, $file, $filename);
+
+        $row = Sertifikasi::create([
+            'nim'                  => $data['nim'],
+            'nama_sertifikasi'     => $data['nama_sertifikasi'],
+            'kategori_sertifikasi' => $data['kategori_sertifikasi'],
+            'file_sertifikat'      => $filename, // hanya nama file
+        ]);
+
+        return response()->json($row->fresh()->load('mahasiswa'), 201);
+    }
+
+    // PUT/PATCH /api/sertifikasi/{id}  (multipart opsional)
+    public function update(SertifikasiUpdateRequest $req, int $id)
+    {
+        $row  = Sertifikasi::findOrFail($id);
+        $data = $req->validated();
+        $dir  = Sertifikasi::dir();
+
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk('public');
+
+        if ($req->hasFile('file')) {
+            // hapus file lama jika ada
+            if ($row->file_sertifikat) {
+                $disk->delete($dir.'/'.$row->file_sertifikat);
             }
-
-            $sertif = Sertifikasi::create($validated);
-            return response()->json(['message' => 'Sertifikasi created successfully', 'data' => $sertif], 201);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to store sertifikasi', 'error' => $e->getMessage()], 500);
+            $file = $req->file('file');
+            $safeSlug = Str::slug(substr(($data['nama_sertifikasi'] ?? $row->nama_sertifikasi), 0, 60), '-');
+            $filename = ($data['nim'] ?? $row->nim).'_'.$safeSlug.'_'.Str::random(6).'.'.$file->getClientOriginalExtension();
+            $disk->putFileAs($dir, $file, $filename);
+            $data['file_sertifikat'] = $filename;
         }
+
+        $row->update($data);
+        return response()->json($row->fresh()->load('mahasiswa'));
     }
 
-    public function show($id)
+    // DELETE /api/sertifikasi/{id}
+    public function destroy(int $id)
     {
-        try {
-            $sertif = Sertifikasi::with('mahasiswa')->findOrFail($id);
-            return response()->json(['message' => 'Sertifikasi fetched successfully', 'data' => $sertif], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Sertifikasi not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to fetch sertifikasi', 'error' => $e->getMessage()], 500);
+        $row = Sertifikasi::findOrFail($id);
+        $dir = Sertifikasi::dir();
+
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk('public');
+
+        if ($row->file_sertifikat) {
+            $disk->delete($dir.'/'.$row->file_sertifikat);
         }
+        $row->delete();
+
+        return response()->json(['deleted'=>true]);
     }
 
-    public function update(Request $request, $id)
+    // GET /api/sertifikasi/{id}/download
+    public function download(int $id)
     {
-        try {
-            $sertif = Sertifikasi::findOrFail($id);
-            Log::info('Updating sertifikasi:', $request->all());
-
-            $validated = $request->validate([
-                'id_mahasiswa' => 'sometimes|exists:tb_mahasiswa,id_mahasiswa',
-                'nama_sertifikasi' => 'sometimes|string',
-                'kategori_sertifikasi' => 'sometimes|string',
-                'file_sertifikat' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048'
-            ]);
-
-            if ($request->hasFile('file_sertifikat')) {
-                $validated['file_sertifikat'] = $request->file('file_sertifikat')->store('sertifikasi', 'public');
-            }
-
-            $sertif->update($validated);
-            return response()->json(['message' => 'Sertifikasi updated successfully', 'data' => $sertif], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Sertifikasi not found'], 404);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to update sertifikasi', 'error' => $e->getMessage()], 500);
+        $row = Sertifikasi::findOrFail($id);
+        if (!$row->file_sertifikat) {
+            return response()->json(['message'=>'File not found'], 404);
         }
-    }
 
-    public function destroy($id)
-    {
-        try {
-            $sertif = Sertifikasi::findOrFail($id);
-            $sertif->delete();
-            return response()->json(['message' => 'Sertifikasi deleted successfully'], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Sertifikasi not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to delete sertifikasi', 'error' => $e->getMessage()], 500);
+        $rel = Sertifikasi::dir().'/'.$row->file_sertifikat;
+
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk('public');
+
+        if (!$disk->exists($rel)) {
+            return response()->json(['message'=>'File missing on storage'], 404);
         }
+
+        // gunakan response()->download + path() agar Intelephense happy
+        return response()->download($disk->path($rel), $row->file_sertifikat);
     }
 }

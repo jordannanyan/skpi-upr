@@ -2,142 +2,123 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\KpStoreRequest;
+use App\Http\Requests\KpUpdateRequest;
 use App\Models\KerjaPraktek;
 use Illuminate\Http\Request;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Routing\Controller as BaseController;
+use Illuminate\Support\Str;
 
-class KerjaPraktekController extends BaseController
+class KerjaPraktekController extends Controller
 {
-    public function index(Request $request)
+    // GET /api/kp?nim=&prodi_id=&fakultas_id=&q=&per_page=
+    public function index(Request $req)
     {
-        try {
-            $query = KerjaPraktek::with('mahasiswa');
+        $perPage = (int) $req->integer('per_page') ?: 25;
 
-            // Filter by id_mahasiswa (direct)
-            if ($request->has('id_mahasiswa')) {
-                $query->where('id_mahasiswa', $request->id_mahasiswa);
-            }
+        $rows = KerjaPraktek::query()
+            ->with(['mahasiswa:nim,nama_mahasiswa,id_prodi'])
+            ->ofNim($req->string('nim'))
+            ->ofProdi($req->integer('prodi_id'))
+            ->ofFakultas($req->integer('fakultas_id'))
+            ->search($req->string('q'))
+            ->latest('id')
+            ->paginate($perPage)
+            ->appends($req->query());
 
-            // Optional filter by id_prodi
-            if ($request->has('id_prodi')) {
-                $query->whereHas('mahasiswa.prodi', function ($q) use ($request) {
-                    $q->where('id_prodi', $request->id_prodi);
-                });
-            }
-
-            // Optional filter by id_fakultas
-            if ($request->has('id_fakultas')) {
-                $query->whereHas('mahasiswa.prodi.fakultas', function ($q) use ($request) {
-                    $q->where('id_fakultas', $request->id_fakultas);
-                });
-            }
-
-            if ($request->has('q')) {
-                // Group the search conditions to ensure proper OR logic
-                $query->where(function ($subQuery) use ($request) {
-                    // Search by 'nama_kegiatan' in the current table
-                    $subQuery->where('nama_kegiatan', 'like', '%' . $request->q . '%')
-                            // OR search by 'nama_mahasiswa' in the related 'mahasiswa' table
-                            ->orWhereHas('mahasiswa', function ($relationQuery) use ($request) {
-                                $relationQuery->where('nama_mahasiswa', 'like', '%' . $request->q . '%');
-                            });
-            });
-}
-
-            $data = $query->get();
-
-            return response()->json([
-                'message' => 'Kerja Praktek fetched successfully',
-                'data' => $data
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to fetch kerja praktek',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json($rows);
     }
 
-
-    public function store(Request $request)
+    // GET /api/kp/{id}
+    public function show(int $id)
     {
-        try {
-            Log::info('Storing kerja praktek:', $request->all());
-            $validated = $request->validate([
-                'id_mahasiswa' => 'required|exists:tb_mahasiswa,id_mahasiswa',
-                'nama_kegiatan' => 'required|string',
-                'file_sertifikat' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048'
-            ]);
+        $row = KerjaPraktek::with(['mahasiswa:nim,nama_mahasiswa,id_prodi'])->findOrFail($id);
+        return response()->json($row);
+    }
 
-            if ($request->hasFile('file_sertifikat')) {
-                $filePath = $request->file('file_sertifikat')->store('kerja_praktek', 'public');
-                $validated['file_sertifikat'] = $filePath;
+    // POST /api/kp  (multipart/form-data)
+    public function store(KpStoreRequest $req)
+    {
+        $data = $req->validated();
+
+        // simpan file -> storage/app/public/skpi/kp
+        $file = $req->file('file');
+        $dir  = KerjaPraktek::dir();
+
+        // nama file aman: {nim}_{slug_kegiatan}_{uniq}.{ext}
+        $safeSlug = Str::slug(substr($data['nama_kegiatan'], 0, 60), '-');
+        $filename = $data['nim'] . '_' . $safeSlug . '_' . Str::random(6) . '.' . $file->getClientOriginalExtension();
+
+        Storage::disk('public')->putFileAs($dir, $file, $filename);
+
+        $row = KerjaPraktek::create([
+            'nim'            => $data['nim'],
+            'nama_kegiatan'  => $data['nama_kegiatan'],
+            'file_sertifikat' => $filename, // hanya nama file
+        ]);
+
+        return response()->json($row->fresh()->load('mahasiswa'), 201);
+    }
+
+    // PATCH/PUT /api/kp/{id}
+    public function update(KpUpdateRequest $req, int $id)
+    {
+        $row = KerjaPraktek::findOrFail($id);
+        $data = $req->validated();
+
+        // update file bila ada
+        if ($req->hasFile('file')) {
+            $dir = KerjaPraktek::dir();
+            // hapus file lama (jika ada)
+            if ($row->file_sertifikat) {
+                Storage::disk('public')->delete($dir . '/' . $row->file_sertifikat);
             }
-
-            $kp = KerjaPraktek::create($validated);
-
-            return response()->json(['message' => 'Kerja Praktek created successfully', 'data' => $kp], 201);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to store kerja praktek', 'error' => $e->getMessage()], 500);
+            $file = $req->file('file');
+            $safeSlug = Str::slug(substr(($data['nama_kegiatan'] ?? $row->nama_kegiatan), 0, 60), '-');
+            $filename = ($data['nim'] ?? $row->nim) . '_' . $safeSlug . '_' . Str::random(6) . '.' . $file->getClientOriginalExtension();
+            Storage::disk('public')->putFileAs($dir, $file, $filename);
+            $data['file_sertifikat'] = $filename; // simpan nama file baru
         }
+
+        $row->update($data);
+
+        return response()->json($row->fresh()->load('mahasiswa'));
     }
 
-    public function show($id)
+    // DELETE /api/kp/{id}
+    public function destroy(int $id)
     {
-        try {
-            $kp = KerjaPraktek::with('mahasiswa')->findOrFail($id);
-            return response()->json(['message' => 'Kerja Praktek fetched successfully', 'data' => $kp], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Kerja Praktek not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to fetch kerja praktek', 'error' => $e->getMessage()], 500);
+        $row = KerjaPraktek::findOrFail($id);
+        $dir = KerjaPraktek::dir();
+
+        // hapus file fisik
+        if ($row->file_sertifikat) {
+            Storage::disk('public')->delete($dir . '/' . $row->file_sertifikat);
         }
+
+        $row->delete();
+
+        return response()->json(['deleted' => true]);
     }
 
-    public function update(Request $request, $id)
+    // (opsional) GET /api/kp/{id}/download
+    public function download(int $id)
     {
-        try {
-            $kp = KerjaPraktek::findOrFail($id);
-            Log::info('Updating kerja praktek:', $request->all());
-
-            $validated = $request->validate([
-                'id_mahasiswa' => 'sometimes|exists:tb_mahasiswa,id_mahasiswa',
-                'nama_kegiatan' => 'sometimes|string',
-                'file_sertifikat' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048'
-            ]);
-
-            if ($request->hasFile('file_sertifikat')) {
-                $filePath = $request->file('file_sertifikat')->store('kerja_praktek', 'public');
-                $validated['file_sertifikat'] = $filePath;
-            }
-
-            $kp->update($validated);
-
-            return response()->json(['message' => 'Kerja Praktek updated successfully', 'data' => $kp], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Kerja Praktek not found'], 404);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to update kerja praktek', 'error' => $e->getMessage()], 500);
+        $row = KerjaPraktek::findOrFail($id);
+        if (!$row->file_sertifikat) {
+            return response()->json(['message' => 'File not found'], 404);
         }
-    }
 
-    public function destroy($id)
-    {
-        try {
-            $kp = KerjaPraktek::findOrFail($id);
-            $kp->delete();
-            return response()->json(['message' => 'Kerja Praktek deleted successfully'], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Kerja Praktek not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to delete kerja praktek', 'error' => $e->getMessage()], 500);
+        $relPath = KerjaPraktek::dir() . '/' . $row->file_sertifikat;
+
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk('public');
+
+        if (!$disk->exists($relPath)) {
+            return response()->json(['message' => 'File missing on storage'], 404);
         }
+
+        // gunakan response()->download + path() agar Intelephense happy
+        return response()->download($disk->path($relPath), $row->file_sertifikat);
     }
 }

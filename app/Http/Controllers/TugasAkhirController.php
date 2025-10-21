@@ -2,144 +2,69 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\TaStoreRequest;
+use App\Http\Requests\TaUpdateRequest;
 use App\Models\TugasAkhir;
 use Illuminate\Http\Request;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Routing\Controller as BaseController;
 
-class TugasAkhirController extends BaseController
+class TugasAkhirController extends Controller
 {
-    public function index(Request $request)
+    // GET /api/ta?nim=&prodi_id=&fakultas_id=&q=&per_page=
+    public function index(Request $req)
     {
-        try {
-            $query = TugasAkhir::with('mahasiswa.prodi.fakultas');
+        $perPage = (int) ($req->integer('per_page') ?: 25);
 
-            // Filter by id_mahasiswa
-            if ($request->has('id_mahasiswa')) {
-                $query->where('id_mahasiswa', $request->id_mahasiswa);
-            }
-
-            // Filter by id_prodi
-            if ($request->has('id_prodi')) {
-                $query->whereHas('mahasiswa.prodi', function ($q) use ($request) {
-                    $q->where('id_prodi', $request->id_prodi);
+        $rows = TugasAkhir::query()
+            ->with(['mahasiswa:nim,nama_mahasiswa,id_prodi'])
+            ->when($req->filled('nim'), fn($q)=>$q->where('nim', $req->string('nim')))
+            ->when($req->filled('prodi_id'), function($q) use($req){
+                $q->whereHas('mahasiswa', fn($m)=>$m->where('id_prodi', (int)$req->integer('prodi_id')));
+            })
+            ->when($req->filled('fakultas_id'), function($q) use($req){
+                $q->whereHas('mahasiswa.prodi', fn($p)=>$p->where('id_fakultas', (int)$req->integer('fakultas_id')));
+            })
+            ->when(trim((string)$req->string('q')) !== '', function($q) use($req){
+                $kw = trim((string)$req->string('q'));
+                $q->where(function($w) use ($kw){
+                    $w->where('judul','like',"%{$kw}%")
+                      ->orWhere('kategori','like',"%{$kw}%")
+                      ->orWhere('nim','like',"%{$kw}%");
                 });
-            }
+            })
+            ->latest('id')
+            ->paginate($perPage)
+            ->appends($req->query());
 
-            // Filter by id_fakultas
-            if ($request->has('id_fakultas')) {
-                $query->whereHas('mahasiswa.prodi.fakultas', function ($q) use ($request) {
-                    $q->where('id_fakultas', $request->id_fakultas);
-                });
-            }
-
-            $data = $query->get();
-
-            return response()->json([
-                'message' => 'Tugas Akhir fetched successfully',
-                'data' => $data
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to fetch tugas akhir',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json($rows);
     }
 
-
-    public function store(Request $request)
+    // GET /api/ta/{id}
+    public function show(int $id)
     {
-        try {
-            Log::info('Storing tugas akhir:', $request->all());
-            $validated = $request->validate([
-                'id_mahasiswa' => 'required|exists:tb_mahasiswa,id_mahasiswa',
-                'kategori' => 'required|string',
-                'judul' => 'required|string',
-                'file_halaman_dpn' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
-                'file_lembar_pengesahan' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048'
-            ]);
-
-            if ($request->hasFile('file_halaman_dpn')) {
-                $filePath = $request->file('file_halaman_dpn')->store('tugas_akhir', 'public');
-                $validated['file_halaman_dpn'] = $filePath;
-            }
-
-            if ($request->hasFile('file_lembar_pengesahan')) {
-                $filePath = $request->file('file_lembar_pengesahan')->store('tugas_akhir', 'public');
-                $validated['file_lembar_pengesahan'] = $filePath;
-            }
-
-            $ta = TugasAkhir::create($validated);
-
-            return response()->json(['message' => 'Tugas Akhir created successfully', 'data' => $ta], 201);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to store tugas akhir', 'error' => $e->getMessage()], 500);
-        }
+        $row = TugasAkhir::with(['mahasiswa:nim,nama_mahasiswa,id_prodi'])->findOrFail($id);
+        return response()->json($row);
     }
 
-    public function show($id)
+    // POST /api/ta
+    public function store(TaStoreRequest $req)
     {
-        try {
-            $ta = TugasAkhir::with('mahasiswa')->findOrFail($id);
-            return response()->json(['message' => 'Tugas Akhir fetched successfully', 'data' => $ta], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Tugas Akhir not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to fetch tugas akhir', 'error' => $e->getMessage()], 500);
-        }
+        $row = TugasAkhir::create($req->validated());
+        return response()->json($row->load('mahasiswa'), 201);
     }
 
-    public function update(Request $request, $id)
+    // PUT/PATCH /api/ta/{id}
+    public function update(TaUpdateRequest $req, int $id)
     {
-        try {
-            $ta = TugasAkhir::findOrFail($id);
-            Log::info('Updating tugas akhir:', $request->all());
-
-            $validated = $request->validate([
-                'id_mahasiswa' => 'sometimes|exists:tb_mahasiswa,id_mahasiswa',
-                'kategori' => 'sometimes|string',
-                'judul' => 'sometimes|string',
-                'file_halaman_dpn' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
-                'file_lembar_pengesahan' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048'
-            ]);
-
-            if ($request->hasFile('file_halaman_dpn')) {
-                $filePath = $request->file('file_halaman_dpn')->store('tugas_akhir', 'public');
-                $validated['file_halaman_dpn'] = $filePath;
-            }
-
-            if ($request->hasFile('file_lembar_pengesahan')) {
-                $filePath = $request->file('file_lembar_pengesahan')->store('tugas_akhir', 'public');
-                $validated['file_lembar_pengesahan'] = $filePath;
-            }
-
-            $ta->update($validated);
-
-            return response()->json(['message' => 'Tugas Akhir updated successfully', 'data' => $ta], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Tugas Akhir not found'], 404);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to update tugas akhir', 'error' => $e->getMessage()], 500);
-        }
+        $row = TugasAkhir::findOrFail($id);
+        $row->update($req->validated());
+        return response()->json($row->load('mahasiswa'));
     }
 
-    public function destroy($id)
+    // DELETE /api/ta/{id}
+    public function destroy(int $id)
     {
-        try {
-            $ta = TugasAkhir::findOrFail($id);
-            $ta->delete();
-            return response()->json(['message' => 'Tugas Akhir deleted successfully'], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'Tugas Akhir not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to delete tugas akhir', 'error' => $e->getMessage()], 500);
-        }
+        $row = TugasAkhir::findOrFail($id);
+        $row->delete();
+        return response()->json(['deleted'=>true]);
     }
 }

@@ -1,48 +1,106 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\{
-    MahasiswaController,
-    FakultasController,
-    ProdiController,
-    KategoriController,
-    PengajuanController,
-    PengesahanController,
-    CplController,
-    CplSkorController,
-    CetakController,
-    KerjaPraktekController,
-    TugasAkhirController,
-    SertifikasiController,
-    SuperAdminController,
-    LoginController,
-    CplMasterController // ⬅️ tambah ini
-};
 
-// Login routes
-Route::post('/login/superadmin', [LoginController::class, 'loginSuperAdmin']);
-Route::post('/login/fakultas', [LoginController::class, 'loginFakultas']);
-Route::post('/login/prodi', [LoginController::class, 'loginProdi']);
-Route::post('/login/mahasiswa', [LoginController::class, 'loginMahasiswa']);
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\MahasiswaController;
+use App\Http\Controllers\ProdiController;
+use App\Http\Controllers\FakultasController;
+use App\Http\Controllers\SyncController;
+use App\Http\Controllers\CplController;
+use App\Http\Controllers\SkorCplController;
+use App\Http\Controllers\KerjaPraktekController;
+use App\Http\Controllers\TugasAkhirController;
+use App\Http\Controllers\SertifikasiController;
+use App\Http\Controllers\LaporanSkpiController;
+use App\Http\Controllers\ApprovalLogController;
 
-// Auto-generated routes for all CRUD controllers
-Route::apiResource('mahasiswa', MahasiswaController::class);
-Route::apiResource('fakultas', FakultasController::class);
-Route::apiResource('prodi', ProdiController::class);
-Route::apiResource('kategori', KategoriController::class);
-Route::apiResource('pengajuan', PengajuanController::class);
-Route::apiResource('pengesahan', PengesahanController::class);
-Route::apiResource('cpl', CplController::class);
-Route::apiResource('cpl-skor', CplSkorController::class);
-Route::apiResource('cpl-master', CplMasterController::class); // ⬅️ route baru
-Route::apiResource('cetak', CetakController::class);
-Route::apiResource('kerja-praktek', KerjaPraktekController::class);
-Route::apiResource('tugas-akhir', TugasAkhirController::class);
-Route::apiResource('sertifikasi', SertifikasiController::class);
-Route::apiResource('super-admin', SuperAdminController::class);
 
-// Extra routes
-Route::get('/pengesahan/print/{id}', [PengesahanController::class, 'getPengesahanDetail']);
-Route::get('mahasiswa-import-template', [MahasiswaController::class, 'template']);
-Route::post('mahasiswa-import', [MahasiswaController::class, 'import']);
-Route::post('cpl-skor-bulk', [CplSkorController::class, 'bulkUpsert']);
+/*
+|--------------------------------------------------------------------------
+| Public routes
+|--------------------------------------------------------------------------
+*/
+
+Route::post('/login', [AuthController::class, 'login']);
+
+/*
+|--------------------------------------------------------------------------
+| Protected routes (Sanctum)
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth:sanctum')->group(function () {
+    // session helpers
+    Route::get('/me',     [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+
+    // Users CRUD
+    Route::get('/users',               [UserController::class, 'index']);
+    Route::post('/users',              [UserController::class, 'store']);
+    Route::get('/users/{id}',          [UserController::class, 'show']);
+    Route::match(['put', 'patch'], '/users/{id}', [UserController::class, 'update']);
+    Route::delete('/users/{id}',       [UserController::class, 'destroy']);
+
+    // Sync (restricted by role)
+    Route::middleware('role:SuperAdmin,AdminFakultas,AdminJurusan')->group(function () {
+        Route::post('/sync/upttik/all', [SyncController::class, 'all']);
+    });
+
+    // If you want to make academic data private, move these here instead:
+    Route::get('/fakultas',          [FakultasController::class, 'index']);
+    Route::get('/fakultas/{id}',     [FakultasController::class, 'show']);
+    Route::get('/prodi',             [ProdiController::class, 'index']);
+    Route::get('/prodi/{id}',        [ProdiController::class, 'show']);
+    Route::get('/mahasiswa',         [MahasiswaController::class, 'index']);
+
+    // CPL master
+    Route::get('/cpl',               [CplController::class, 'index']);
+    Route::get('/cpl/{kode}',        [CplController::class, 'show']);
+    Route::post('/cpl',              [CplController::class, 'store']);
+    Route::match(['put', 'patch'], '/cpl/{kode}', [CplController::class, 'update']);
+    Route::delete('/cpl/{kode}',     [CplController::class, 'destroy']);
+
+    // Skor CPL
+    Route::get('/cpl/{kode}/skor',   [SkorCplController::class, 'indexByCpl']);
+    Route::get('/mahasiswa/{nim}/skor-cpl', [SkorCplController::class, 'indexByMahasiswa']);
+    Route::post('/skor-cpl/upsert',  [SkorCplController::class, 'upsert']);
+    Route::delete('/cpl/{kode}/skor/{nim}', [SkorCplController::class, 'destroy']);
+
+    Route::get('/kp',                 [KerjaPraktekController::class, 'index']);
+    Route::get('/kp/{id}',            [KerjaPraktekController::class, 'show']);
+    Route::post('/kp',                [KerjaPraktekController::class, 'store']);     // multipart
+    Route::match(['put', 'patch'], '/kp/{id}', [KerjaPraktekController::class, 'update']); // multipart opsional
+    Route::delete('/kp/{id}',         [KerjaPraktekController::class, 'destroy']);
+    Route::get('/kp/{id}/download',   [KerjaPraktekController::class, 'download']);  // opsional
+
+    Route::get('/ta',                [TugasAkhirController::class, 'index']);
+    Route::get('/ta/{id}',           [TugasAkhirController::class, 'show']);
+    Route::post('/ta',               [TugasAkhirController::class, 'store']);
+    Route::match(['put', 'patch'], '/ta/{id}', [TugasAkhirController::class, 'update']);
+    Route::delete('/ta/{id}',        [TugasAkhirController::class, 'destroy']);
+
+    Route::get('/sertifikasi',                [SertifikasiController::class, 'index']);
+    Route::get('/sertifikasi/{id}',           [SertifikasiController::class, 'show']);
+    Route::post('/sertifikasi',               [SertifikasiController::class, 'store']);        // multipart
+    Route::match(['put', 'patch'], '/sertifikasi/{id}', [SertifikasiController::class, 'update']); // multipart opsional
+    Route::delete('/sertifikasi/{id}',        [SertifikasiController::class, 'destroy']);
+    Route::get('/sertifikasi/{id}/download',  [SertifikasiController::class, 'download']);
+
+    Route::get('/laporan-skpi',                [LaporanSkpiController::class, 'index']);
+    Route::get('/laporan-skpi/{id}',           [LaporanSkpiController::class, 'show']);
+
+    Route::post('/laporan-skpi/submit',        [LaporanSkpiController::class, 'submit']);         // AdminJurusan/Kajur
+    Route::post('/laporan-skpi/{id}/verify',   [LaporanSkpiController::class, 'verify']);         // AdminFakultas
+    Route::post('/laporan-skpi/{id}/wakadek',  [LaporanSkpiController::class, 'decideWakadek']);  // Wakadek
+    Route::post('/laporan-skpi/{id}/dekan',    [LaporanSkpiController::class, 'decideDekan']);    // Dekan
+
+    Route::post('/laporan-skpi/{id}/regenerate', [LaporanSkpiController::class, 'regenerate']);    // SuperAdmin/AdminFakultas/Dekan
+    Route::get('/laporan-skpi/{id}/download',  [LaporanSkpiController::class, 'download']);
+
+    Route::get('/approval-logs',     [ApprovalLogController::class, 'index'])
+        ->middleware('role:SuperAdmin,Dekan,Wakadek,AdminFakultas,Kajur,AdminJurusan');
+
+    Route::get('/approval-logs/{id}', [ApprovalLogController::class, 'show'])
+        ->middleware('role:SuperAdmin,Dekan,Wakadek,AdminFakultas,Kajur,AdminJurusan');
+});

@@ -2,111 +2,58 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CplStoreRequest;
+use App\Http\Requests\CplUpdateRequest;
 use App\Models\Cpl;
-use Illuminate\Http\Request;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Routing\Controller as BaseController;
 
-class CplController extends BaseController
+class CplController extends Controller
 {
-    public function index(Request $request)
+    // GET /api/cpl?q=&sort=&dir=&per_page=&with_counts=1
+    public function index()
     {
-        try {
-            $query = Cpl::query();
+        $perPage = (int) request('per_page', 25);
+        $withCounts = (bool) request()->boolean('with_counts');
 
-            // Filter by id_prodi
-            if ($request->has('id_prodi')) {
-                $query->whereHas('cplSkors.mahasiswa.prodi', function ($q) use ($request) {
-                    $q->where('id_prodi', $request->id_prodi);
-                });
-            }
+        $q = Cpl::query()->search(request('q'))->sort(request('sort'), request('dir'));
 
-            // Filter by id_fakultas
-            if ($request->has('id_fakultas')) {
-                $query->whereHas('cplSkors.mahasiswa.prodi.fakultas', function ($q) use ($request) {
-                    $q->where('id_fakultas', $request->id_fakultas);
-                });
-            }
-
-            $data = $query->get();
-
-            return response()->json([
-                'message' => 'CPL fetched successfully',
-                'data' => $data
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to fetch CPL',
-                'error' => $e->getMessage()
-            ], 500);
+        if ($withCounts) {
+            $q->withCount('skor'); // jumlah baris skor
         }
+
+        return response()->json(
+            $q->paginate($perPage)->appends(request()->query())
+        );
     }
 
-    public function store(Request $request)
+    // GET /api/cpl/{kode}
+    public function show(string $kode)
     {
-        try {
-            Log::info('Storing CPL:', $request->all());
-            $validated = $request->validate([
-                'nama_cpl' => 'required|string',
-                'status' => 'required|in:aktif,noaktif'
-            ]);
-
-            $cpl = Cpl::create($validated);
-
-            return response()->json(['message' => 'CPL created successfully', 'data' => $cpl], 201);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to store CPL', 'error' => $e->getMessage()], 500);
-        }
+        $row = Cpl::query()
+            ->withCount('skor')
+            ->findOrFail($kode);
+        return response()->json($row);
     }
 
-    public function show($id)
+    // POST /api/cpl
+    public function store(CplStoreRequest $req)
     {
-        try {
-            $cpl = Cpl::findOrFail($id);
-            return response()->json(['message' => 'CPL fetched successfully', 'data' => $cpl], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'CPL not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to fetch CPL', 'error' => $e->getMessage()], 500);
-        }
+        $row = Cpl::create($req->validated());
+        return response()->json($row, 201);
     }
 
-    public function update(Request $request, $id)
+    // PUT/PATCH /api/cpl/{kode}
+    public function update(CplUpdateRequest $req, string $kode)
     {
-        try {
-            $cpl = Cpl::findOrFail($id);
-            Log::info('Updating CPL:', $request->all());
-
-            $validated = $request->validate([
-                'nama_cpl' => 'sometimes|string',
-                'status' => 'sometimes|in:aktif,noaktif'
-            ]);
-
-            $cpl->update($validated);
-
-            return response()->json(['message' => 'CPL updated successfully', 'data' => $cpl], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'CPL not found'], 404);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to update CPL', 'error' => $e->getMessage()], 500);
-        }
+        $row = Cpl::findOrFail($kode);
+        $row->update($req->validated());
+        return response()->json($row);
     }
 
-    public function destroy($id)
+    // DELETE /api/cpl/{kode}
+    public function destroy(string $kode)
     {
-        try {
-            $cpl = Cpl::findOrFail($id);
-            $cpl->delete();
-            return response()->json(['message' => 'CPL deleted successfully'], 200);
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['message' => 'CPL not found'], 404);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to delete CPL', 'error' => $e->getMessage()], 500);
-        }
+        $row = Cpl::findOrFail($kode);
+        $row->delete();
+        return response()->json(['deleted'=>true]);
     }
 }
