@@ -1,0 +1,8 @@
+@import "bootstrap/scss/bootstrap";
+
+// util tambahan
+.view { display:none; }
+.view.active { display:block; }
+.truncate { max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body { background: #f7f7fb; }
+.nav-pills .nav-link.active { background: #0d6efd; }

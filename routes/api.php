@@ -87,17 +87,30 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/sertifikasi/{id}',        [SertifikasiController::class, 'destroy']);
     Route::get('/sertifikasi/{id}/download',  [SertifikasiController::class, 'download']);
 
-    Route::get('/laporan-skpi',                [LaporanSkpiController::class, 'index']);
-    Route::get('/laporan-skpi/{id}',           [LaporanSkpiController::class, 'show']);
+    Route::get('/laporan-skpi', [LaporanSkpiController::class, 'index']);
+    Route::get('/laporan-skpi/{id}', [LaporanSkpiController::class, 'show']);
 
-    Route::post('/laporan-skpi/submit',        [LaporanSkpiController::class, 'submit']);         // AdminJurusan/Kajur
-    Route::post('/laporan-skpi/{id}/verify',   [LaporanSkpiController::class, 'verify']);         // AdminFakultas
-    Route::post('/laporan-skpi/{id}/wakadek',  [LaporanSkpiController::class, 'decideWakadek']);  // Wakadek
-    Route::post('/laporan-skpi/{id}/dekan',    [LaporanSkpiController::class, 'decideDekan']);    // Dekan
+    Route::post('/laporan-skpi/submit', [LaporanSkpiController::class, 'submit'])
+        ->middleware('role:AdminJurusan,Kajur,SuperAdmin');
 
-    Route::post('/laporan-skpi/{id}/regenerate', [LaporanSkpiController::class, 'regenerate']);    // SuperAdmin/AdminFakultas/Dekan
-    Route::get('/laporan-skpi/{id}/download',  [LaporanSkpiController::class, 'download']);
+    // verifikasi Kajur
+    Route::post('/laporan-skpi/{id}/verify', [LaporanSkpiController::class, 'verify'])
+        ->middleware('role:Kajur,SuperAdmin');
 
+    // pengesahan Admin Fakultas
+    Route::post('/laporan-skpi/{id}/pengesahan', [LaporanSkpiController::class, 'pengesahan'])
+        ->middleware('role:AdminFakultas,SuperAdmin');
+
+    // approve Wakadek & Dekan
+    Route::post('/laporan-skpi/{id}/wakadek', [LaporanSkpiController::class, 'decideWakadek'])
+        ->middleware('role:Wakadek,SuperAdmin');
+    Route::post('/laporan-skpi/{id}/dekan', [LaporanSkpiController::class, 'decideDekan'])
+        ->middleware('role:Dekan,SuperAdmin');
+
+    // regenerate & download
+    Route::post('/laporan-skpi/{id}/regenerate', [LaporanSkpiController::class, 'regenerate'])
+        ->middleware('role:SuperAdmin,AdminFakultas,Dekan');
+    Route::get('/laporan-skpi/{id}/download', [LaporanSkpiController::class, 'download']);
     Route::get('/approval-logs',     [ApprovalLogController::class, 'index'])
         ->middleware('role:SuperAdmin,Dekan,Wakadek,AdminFakultas,Kajur,AdminJurusan');
 
