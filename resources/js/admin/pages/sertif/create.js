@@ -84,7 +84,7 @@ $('#selProdi')?.addEventListener('change', (e)=>{
 $('#btnSubmit')?.addEventListener('click', async ()=>{
   const nim   = $('#selNim').value
   const nama  = $('#inpNama').value.trim()
-  const kat   = $('#inpKategori').value.trim()
+  const kat   = $('#selKategori').value.trim()
   const file  = $('#inpFile').files?.[0] || null
 
   if(!nim || !nama || !kat) return alert('Lengkapi NIM, Nama Sertifikasi, dan Kategori.')
@@ -108,5 +108,8 @@ $('#btnSubmit')?.addEventListener('click', async ()=>{
   try{
     await mustRole()
     await loadFakultas()
-  }catch(e){}
+  }catch(e){
+    auth.clear()
+    window.location.replace('/login')
+  }
 })()

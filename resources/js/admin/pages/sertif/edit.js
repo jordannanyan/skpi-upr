@@ -10,7 +10,6 @@ async function loadMe(){
   const { data } = await api.get('/me')
   me = data; role = data.role
   if (!['AdminJurusan','Kajur','SuperAdmin'].includes(role)) {
-    // Boleh juga read-only, tapi untuk edit kita batasi FE
     alert('Hanya Admin Jurusan/Kajur yang boleh mengubah.')
     window.location.replace('/admin/sertifikasi')
     throw new Error('forbidden')
@@ -26,18 +25,30 @@ async function loadDetail(){
   sel.innerHTML = ''
   const opt = document.createElement('option')
   opt.value = row.nim
-  opt.textContent = `${row.nim} — ${(row.mahasiswa?.nama_mahasiswa || '-')}`
+  opt.textContent = `${row.nim} — ${(row.mahasiswa?.nama_mahasiswa || row.nama_mhs || '-')}`
   sel.appendChild(opt)
   sel.value = row.nim
   sel.disabled = true
 
+  // prefill
   $('#inpNama').value = row.nama_sertifikasi || ''
-  $('#inpKategori').value = row.kategori_sertifikasi || ''
+
+  // set kategori ke dropdown
+  const selKategori = $('#selKategori')
+  const current = (row.kategori_sertifikasi || '').trim()
+  // jika value lama tidak ada di 4 opsi, tambahkan sementara agar tidak hilang
+  if (current && ![...selKategori.options].some(o => o.value === current)) {
+    const extra = document.createElement('option')
+    extra.value = current
+    extra.textContent = current + ' (lainnya)'
+    selKategori.appendChild(extra)
+  }
+  selKategori.value = current || ''
 }
 
 $('#btnUpdate')?.addEventListener('click', async ()=>{
   const nama = $('#inpNama').value.trim()
-  const kat  = $('#inpKategori').value.trim()
+  const kat  = $('#selKategori').value.trim()
   const file = $('#inpFile').files?.[0] || null
   if(!nama || !kat) return alert('Lengkapi Nama Sertifikasi dan Kategori.')
 

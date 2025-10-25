@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>@yield('title','Admin – SKPI UPR')</title>
 
-    {{-- CSS & shell (ubah .js -> .ts kalau file Vite kamu TypeScript) --}}
+    {{-- CSS & shell --}}
     @vite(['resources/css/app.css','resources/js/admin/shell.js'])
 
     {{-- Bootstrap & Icons --}}
@@ -21,7 +21,9 @@
         data-api-base="{{ url('/api') }}"
         data-login-url="{{ route('login.page') }}"
         data-admin-url="{{ route('admin.page') }}"
-        data-logout-url="{{ url('/logout') }}">
+        data-logout-url="{{ url('/logout') }}"
+        data-profile-url="{{ url('/admin/profile') }}"
+        data-password-url="{{ url('/admin/password') }}">
     @stack('head')
 </head>
 
@@ -41,7 +43,7 @@
                 <div class="mb-2 text-uppercase small fw-semibold text-secondary">Menu</div>
 
                 <div class="nav nav-pills flex-column gap-1" id="adminMenu">
-                    {{-- Dashboard (semua role) --}}
+                    {{-- Dashboard --}}
                     <a class="nav-link {{ request()->is('admin') ? 'active' : '' }}"
                         href="{{ route('admin.page') }}"
                         data-active="dashboard"
@@ -49,7 +51,7 @@
                         <i class="bi bi-speedometer me-2"></i> Dashboard
                     </a>
 
-                    {{-- Laporan SKPI (semua role melihat, aksi beda di page) --}}
+                    {{-- Laporan SKPI --}}
                     <a class="nav-link {{ request()->is('admin/laporan*') ? 'active' : '' }}"
                         href="{{ url('/admin/laporan') }}"
                         data-active="laporan"
@@ -80,6 +82,8 @@
                         data-roles="SuperAdmin,AdminFakultas,Wakadek,Dekan">
                         <i class="bi bi-building me-2"></i> Fakultas
                     </a>
+
+                    {{-- TA / KP / Sertifikasi / CPL --}}
                     <a class="nav-link {{ request()->is('admin/ta*') ? 'active' : '' }}"
                         href="{{ route('ta.index') }}"
                         data-active="ta"
@@ -98,7 +102,6 @@
                         data-roles="SuperAdmin,Kajur,AdminJurusan">
                         <i class="bi bi-patch-check me-2"></i> Sertifikasi
                     </a>
-
                     <a class="nav-link {{ request()->is('admin/cpl*') ? 'active' : '' }}"
                         href="{{ route('cpl.index') }}"
                         data-active="cpl"
@@ -117,7 +120,23 @@
         <main class="flex-grow-1">
             <div class="p-3 border-bottom bg-white d-flex justify-content-between align-items-center">
                 <div class="fw-semibold">@yield('pageTitle','Dashboard')</div>
-                <div class="small text-muted" id="userInfo">—</div>
+
+                {{-- USER DROPDOWN --}}
+                <div class="dropdown">
+                  <button class="btn btn-sm btn-light dropdown-toggle d-flex align-items-center gap-2"
+                          type="button" id="btnUserMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-person-circle fs-5"></i>
+                    <span id="userName">Memuat…</span>
+                    <small class="text-muted" id="userRoleMini"></small>
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="btnUserMenu">
+                    <li class="dropdown-header" id="userDesc">—</li>
+                    <li><a class="dropdown-item" id="linkProfile" href="#">Profil Saya</a></li>
+                    <li><a class="dropdown-item" id="linkPassword" href="#">Ganti Password</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-danger" href="#" id="btnLogoutTop">Logout</a></li>
+                  </ul>
+                </div>
             </div>
 
             <div class="p-4">
@@ -125,6 +144,9 @@
             </div>
         </main>
     </div>
+
+    {{-- Bootstrap JS bundle (wajib untuk dropdown) --}}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
     @stack('scripts')
 </body>

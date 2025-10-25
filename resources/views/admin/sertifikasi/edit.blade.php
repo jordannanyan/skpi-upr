@@ -27,7 +27,13 @@
 
       <div class="col-md-3">
         <label class="form-label small text-muted">Kategori</label>
-        <input type="text" id="inpKategori" class="form-control" placeholder="Kategori">
+        <select id="selKategori" class="form-select">
+          <option value="">— Pilih Kategori —</option>
+          <option value="Sertifikat Keahlian">Sertifikat Keahlian</option>
+          <option value="Pelatihan/Seminar/Workshop">Pelatihan/Seminar/Workshop</option>
+          <option value="Prestasi dan Penghargaan">Prestasi dan Penghargaan</option>
+          <option value="Pengalaman Organisasi">Pengalaman Organisasi</option>
+        </select>
       </div>
 
       <div class="col-md-4">

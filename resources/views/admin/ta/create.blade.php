@@ -34,7 +34,13 @@
 
       <div class="col-md-4">
         <label class="form-label small text-muted">Kategori</label>
-        <input type="text" id="inpKategori" class="form-control" placeholder="Skripsi/Tesis/…">
+        <select id="selKategori" class="form-select">
+          <option value="">— Pilih kategori —</option>
+          <option value="skripsi">Skripsi</option>
+          <option value="tesis">Tesis</option>
+          <option value="disertasi">Disertasi</option>
+        </select>
+        <div class="form-text">Pilih salah satu: Skripsi, Tesis, atau Disertasi.</div>
       </div>
 
       <div class="col-md-8">

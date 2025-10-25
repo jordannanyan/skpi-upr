@@ -11,16 +11,25 @@ use Illuminate\Support\Str;
 
 class SertifikasiController extends Controller
 {
-    // GET /api/sertifikasi?nim=&prodi_id=&fakultas_id=&q=&per_page=
+    /**
+     * GET /api/sertifikasi?nim=&prodi_id=&fakultas_id=&kategori=&nama=&q=&per_page=
+     */
     public function index(Request $req)
     {
         $perPage = (int) $req->integer('per_page') ?: 25;
 
         $rows = Sertifikasi::query()
-            ->with(['mahasiswa:nim,nama_mahasiswa,id_prodi'])
+            // Batasi kolom eager load supaya hemat payload
+            ->with([
+                'mahasiswa:nim,nama_mahasiswa,id_prodi',
+                'mahasiswa.prodi:id,nama_prodi,id_fakultas',
+                'mahasiswa.prodi.fakultas:id,nama_fakultas',
+            ])
             ->ofNim($req->string('nim'))
+            ->ofNama($req->string('nama'))             // filter nama mahasiswa (opsional)
             ->ofProdi($req->integer('prodi_id'))
             ->ofFakultas($req->integer('fakultas_id'))
+            ->ofKategori($req->string('kategori'))     // dukung filter kategori langsung
             ->search($req->string('q'))
             ->latest('id')
             ->paginate($perPage)
@@ -32,7 +41,12 @@ class SertifikasiController extends Controller
     // GET /api/sertifikasi/{id}
     public function show(int $id)
     {
-        $row = Sertifikasi::with(['mahasiswa:nim,nama_mahasiswa,id_prodi'])->findOrFail($id);
+        $row = Sertifikasi::with([
+            'mahasiswa:nim,nama_mahasiswa,id_prodi',
+            'mahasiswa.prodi:id,nama_prodi,id_fakultas',
+            'mahasiswa.prodi.fakultas:id,nama_fakultas',
+        ])->findOrFail($id);
+
         return response()->json($row);
     }
 
@@ -54,10 +68,17 @@ class SertifikasiController extends Controller
             'nim'                  => $data['nim'],
             'nama_sertifikasi'     => $data['nama_sertifikasi'],
             'kategori_sertifikasi' => $data['kategori_sertifikasi'],
-            'file_sertifikat'      => $filename, // hanya nama file
+            'file_sertifikat'      => $filename,
         ]);
 
-        return response()->json($row->fresh()->load('mahasiswa'), 201);
+        return response()->json(
+            $row->fresh()->load([
+                'mahasiswa:nim,nama_mahasiswa,id_prodi',
+                'mahasiswa.prodi:id,nama_prodi,id_fakultas',
+                'mahasiswa.prodi.fakultas:id,nama_fakultas',
+            ]),
+            201
+        );
     }
 
     // PUT/PATCH /api/sertifikasi/{id}  (multipart opsional)
@@ -71,7 +92,6 @@ class SertifikasiController extends Controller
         $disk = Storage::disk('public');
 
         if ($req->hasFile('file')) {
-            // hapus file lama jika ada
             if ($row->file_sertifikat) {
                 $disk->delete($dir.'/'.$row->file_sertifikat);
             }
@@ -83,7 +103,14 @@ class SertifikasiController extends Controller
         }
 
         $row->update($data);
-        return response()->json($row->fresh()->load('mahasiswa'));
+
+        return response()->json(
+            $row->fresh()->load([
+                'mahasiswa:nim,nama_mahasiswa,id_prodi',
+                'mahasiswa.prodi:id,nama_prodi,id_fakultas',
+                'mahasiswa.prodi.fakultas:id,nama_fakultas',
+            ])
+        );
     }
 
     // DELETE /api/sertifikasi/{id}
@@ -120,7 +147,7 @@ class SertifikasiController extends Controller
             return response()->json(['message'=>'File missing on storage'], 404);
         }
 
-        // gunakan response()->download + path() agar Intelephense happy
         return response()->download($disk->path($rel), $row->file_sertifikat);
     }
 }
+    

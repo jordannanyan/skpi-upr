@@ -7,13 +7,14 @@ use Illuminate\Foundation\Http\FormRequest;
 class CplUpdateRequest extends FormRequest
 {
     public function authorize(): bool { return true; }
+
     public function rules(): array
     {
-        $kode = $this->route('kode'); // /api/cpl/{kode}
+        // PK kode_cpl tidak diubah via update (lebih aman)
         return [
-            'kategori' => ['sometimes','string','max:100'],
-            'deskripsi'=> ['sometimes','nullable','string','max:1000'],
-            // kode_cpl sebagai PK tidak diubah lewat update (lebih aman)
+            'id_prodi' => ['sometimes','nullable','integer','exists:ref_prodi,id'],
+            'kategori' => ['sometimes','string','max:50'],
+            'deskripsi'=> ['sometimes','nullable','string'],
         ];
     }
 }

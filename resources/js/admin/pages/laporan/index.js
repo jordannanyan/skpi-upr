@@ -1,4 +1,4 @@
-//js/admin/pages/laporan/index.js
+// js/admin/pages/laporan/index.js
 
 import { api } from '../../../services/api'
 import { auth } from '../../../services/auth'
@@ -6,6 +6,9 @@ import { auth } from '../../../services/auth'
 // util
 const $ = s => document.querySelector(s)
 const $$ = s => document.querySelectorAll(s)
+const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, m => ({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+}[m]))
 
 let me = null
 let role = 'AdminJurusan' // default fallback
@@ -14,33 +17,27 @@ const ADMIN_URL = bridge?.dataset?.adminUrl || '/admin'
 
 // badge helper
 function badge(st){
-  return st==='approved' ? 'success' :
-         st==='rejected' ? 'danger'  :
-         st==='verified' ? 'primary' :
-         st==='wakadek_ok' ? 'warning' : 'secondary'
+  return st==='approved'   ? 'success'  :
+         st==='rejected'   ? 'danger'   :
+         st==='verified'   ? 'primary'  :
+         st==='wakadek_ok' ? 'warning'  : 'secondary'
 }
 
 function roleDefaultFilter(base){
-  if (role === 'Kajur')        base += '&status=submitted&prodi_id=' + (me?.id_prodi ?? '')
-  if (role === 'AdminJurusan') base += '&prodi_id=' + (me?.id_prodi ?? '')
-  if (role === 'AdminFakultas')base += '&fakultas_id=' + (me?.id_fakultas ?? '')
-  if (role === 'Wakadek')      base += '&status=verified&fakultas_id=' + (me?.id_fakultas ?? '')
-  if (role === 'Dekan')        base += '&status=wakadek_ok&fakultas_id=' + (me?.id_fakultas ?? '')
+  if (role === 'Kajur')         base += '&status=submitted&prodi_id='   + (me?.id_prodi ?? '')
+  if (role === 'AdminJurusan')  base += '&prodi_id='                    + (me?.id_prodi ?? '')
+  if (role === 'AdminFakultas') base += '&fakultas_id='                 + (me?.id_fakultas ?? '')
+  if (role === 'Wakadek')       base += '&status=verified&fakultas_id=' + (me?.id_fakultas ?? '')
+  if (role === 'Dekan')         base += '&status=wakadek_ok&fakultas_id='+ (me?.id_fakultas ?? '')
   return base
 }
 
 function renderActions(r){
-  // tombol ke edit page sesuai role
   const linkEdit = `<a class="btn btn-sm btn-outline-primary" href="/admin/laporan/${r.id}/edit">Detail</a>`
-
-  // download jika file ada
   const dl = r.file_url ? `<a class="btn btn-sm btn-outline-secondary" target="_blank" href="${r.file_url}">File</a>` : ''
-
-  // generate jika approved
   const gen = (r.status==='approved')
     ? `<button class="btn btn-sm btn-outline-dark" data-act="generate" data-id="${r.id}">Generate</button>`
     : ''
-
   return [linkEdit, dl, gen].filter(Boolean).join(' ')
 }
 
@@ -48,7 +45,6 @@ async function loadMe(){
   const { data } = await api.get('/me')
   me = data
   role = data.role
-  // sembunyikan tombol create utk role yg tak boleh submit
   const canCreate = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
   if (!canCreate) $('#btnGoCreate')?.classList.add('d-none')
 }
@@ -61,28 +57,38 @@ async function loadLaporan(){
   if (st)  url += '&status=' + encodeURIComponent(st)
   url = roleDefaultFilter(url)
 
+  const body = $('#lapBody')
+  body.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-4">Memuat…</td></tr>`
+
   const { data } = await api.get(url)
   const rows = data.data || data
-  const body = $('#lapBody'); body.innerHTML = ''
+
   if (!rows.length){
-    body.innerHTML = `<tr><td colspan="6" class="text-center text-muted p-4">Tidak ada data</td></tr>`
+    body.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-4">Tidak ada data</td></tr>`
     return
   }
 
-  rows.forEach(r => {
-    const nt = (r.no_pengesahan||'-') + ' / ' + (r.tgl_pengesahan||'-')
+  body.innerHTML = rows.map(r => {
+    const nt  = (r.no_pengesahan || '-') + ' / ' + (r.tgl_pengesahan || '-')
     const cat = r.catatan_verifikasi || '-'
-    const tr = document.createElement('tr')
-    tr.innerHTML = `
-      <td>${r.id}</td>
-      <td>${r.nim}</td>
-      <td><span class="badge text-bg-${badge(r.status)}">${r.status}</span></td>
-      <td>${nt}</td>
-      <td>${cat}</td>
-      <td class="d-flex flex-wrap gap-2">${renderActions(r)}</td>
+    const nama = escapeHtml(r.nama_mhs || '-')
+    const prodi = escapeHtml(r.nama_prodi || '-')
+    const fakultas = escapeHtml(r.nama_fakultas || '-')
+
+    return `
+      <tr>
+        <td>${r.id}</td>
+        <td><code>${r.nim}</code></td>
+        <td>${nama}</td>
+        <td>${prodi}</td>
+        <td>${fakultas}</td>
+        <td><span class="badge text-bg-${badge(r.status)}">${r.status}</span></td>
+        <td>${nt}</td>
+        <td>${escapeHtml(cat)}</td>
+        <td class="d-flex flex-wrap gap-2">${renderActions(r)}</td>
+      </tr>
     `
-    body.appendChild(tr)
-  })
+  }).join('')
 }
 
 $('#lapCari')?.addEventListener('click', loadLaporan)

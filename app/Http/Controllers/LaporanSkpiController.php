@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\Storage;
 
 class LaporanSkpiController extends Controller
 {
-    public function __construct(private LaporanSkpiService $svc) {}
+    public function __construct(private LaporanSkpiService $svc)
+    {
+    }
 
     /* =========================
        Listing & detail
@@ -28,6 +30,8 @@ class LaporanSkpiController extends Controller
         $q = LaporanSkpi::query()
             ->with([
                 'mhs:nim,nama_mahasiswa,id_prodi',
+                'mhs.prodi:id,nama_prodi,id_fakultas',
+                'mhs.prodi.fakultas:id,nama_fakultas',
                 'pengaju:id,username,role',
             ])
             // filter manual
@@ -35,26 +39,27 @@ class LaporanSkpiController extends Controller
             ->ofProdi($req->integer('prodi_id'))
             ->ofFakultas($req->integer('fakultas_id'))
             ->ofStatus($req->string('status'))
-            ->when(trim((string)$req->string('q')) !== '', function($qq) use ($req){
-                $kw = trim((string)$req->string('q'));
-                $qq->where(function($w) use ($kw){
-                    $w->where('no_pengesahan','like',"%{$kw}%")
-                      ->orWhere('catatan_verifikasi','like',"%{$kw}%")
-                      ->orWhere('nim','like',"%{$kw}%");
+            ->when(trim((string) $req->string('q')) !== '', function ($qq) use ($req) {
+                $kw = trim((string) $req->string('q'));
+                $qq->where(function ($w) use ($kw) {
+                    $w->where('no_pengesahan', 'like', "%{$kw}%")
+                        ->orWhere('catatan_verifikasi', 'like', "%{$kw}%")
+                        ->orWhere('nim', 'like', "%{$kw}%");
                 });
             });
 
+
         // ===== Default scope (kalau filter kosong), cegah bocor data
-        $hasProdi   = $req->filled('prodi_id');
-        $hasFak     = $req->filled('fakultas_id');
+        $hasProdi = $req->filled('prodi_id');
+        $hasFak = $req->filled('fakultas_id');
 
         if ($user->isProdiScoped() && !$hasProdi) {
-            $q->whereHas('mhs', fn($mq)=>$mq->where('id_prodi', $user->id_prodi));
+            $q->whereHas('mhs', fn($mq) => $mq->where('id_prodi', $user->id_prodi));
         }
         if ($user->isFacultyScoped() && !$hasFak) {
             // join ke prodi melalui mhs
-            $q->whereHas('mhs', function($mq) use ($user){
-                $mq->whereIn('id_prodi', function($sub) use ($user){
+            $q->whereHas('mhs', function ($mq) use ($user) {
+                $mq->whereIn('id_prodi', function ($sub) use ($user) {
                     $sub->from('ref_prodi')->select('id')->where('id_fakultas', $user->id_fakultas);
                 });
             });
@@ -94,7 +99,7 @@ class LaporanSkpiController extends Controller
     public function submit(LaporanSkpiSubmitRequest $req)
     {
         $user = $req->user();
-        $this->mustRole($user->role, ['AdminJurusan','Kajur','SuperAdmin']);
+        $this->mustRole($user->role, ['AdminJurusan', 'Kajur', 'SuperAdmin']);
 
         $data = $req->validated();
 
@@ -115,24 +120,24 @@ class LaporanSkpiController extends Controller
         }
 
         $row = LaporanSkpi::create([
-            'nim'                 => $data['nim'],
-            'id_pengaju'          => $user->id,
-            'tgl_pengajuan'       => now()->toDateString(),
-            'status'              => LaporanSkpi::ST_SUBMITTED,
-            'catatan_verifikasi'  => $req->input('catatan'),
-            'versi_file'          => 0,
+            'nim' => $data['nim'],
+            'id_pengaju' => $user->id,
+            'tgl_pengajuan' => now()->toDateString(),
+            'status' => LaporanSkpi::ST_SUBMITTED,
+            'catatan_verifikasi' => $req->input('catatan'),
+            'versi_file' => 0,
         ]);
 
         ApprovalLog::create([
             'laporan_id' => $row->id,
-            'actor_id'   => $user->id,
+            'actor_id' => $user->id,
             'actor_role' => $user->role,
-            'action'     => ApprovalLog::ACT_SUBMITTED,
-            'level'      => ApprovalLog::LVL_SUBMISSION,
-            'note'       => $req->input('catatan'),
+            'action' => ApprovalLog::ACT_SUBMITTED,
+            'level' => ApprovalLog::LVL_SUBMISSION,
+            'note' => $req->input('catatan'),
         ]);
 
-        return response()->json($row->load('mhs','pengaju'), 201);
+        return response()->json($row->load('mhs', 'pengaju'), 201);
     }
 
     /* =========================
@@ -143,7 +148,7 @@ class LaporanSkpiController extends Controller
     public function verify(int $id, Request $req)
     {
         $user = $req->user();
-        $this->mustRole($user->role, ['Kajur','SuperAdmin']);
+        $this->mustRole($user->role, ['Kajur', 'SuperAdmin']);
 
         $row = LaporanSkpi::findOrFail($id);
 
@@ -158,14 +163,14 @@ class LaporanSkpiController extends Controller
 
         ApprovalLog::create([
             'laporan_id' => $row->id,
-            'actor_id'   => $user->id,
+            'actor_id' => $user->id,
             'actor_role' => $user->role,
-            'action'     => ApprovalLog::ACT_VERIFIED,
-            'level'      => ApprovalLog::LVL_SUBMISSION,
-            'note'       => $req->input('note'),
+            'action' => ApprovalLog::ACT_VERIFIED,
+            'level' => ApprovalLog::LVL_SUBMISSION,
+            'note' => $req->input('note'),
         ]);
 
-        return response()->json($row->load('mhs','pengaju'));
+        return response()->json($row->load('mhs', 'pengaju'));
     }
 
     /* =========================
@@ -176,7 +181,7 @@ class LaporanSkpiController extends Controller
     public function pengesahan(int $id, Request $req)
     {
         $user = $req->user();
-        $this->mustRole($user->role, ['AdminFakultas','SuperAdmin']);
+        $this->mustRole($user->role, ['AdminFakultas', 'SuperAdmin']);
 
         $row = LaporanSkpi::findOrFail($id);
 
@@ -188,24 +193,24 @@ class LaporanSkpiController extends Controller
         }
 
         $data = $req->validate([
-            'no_pengesahan'  => 'required|string|max:100',
+            'no_pengesahan' => 'required|string|max:100',
             'tgl_pengesahan' => 'required|date',
             'catatan_verifikasi' => 'nullable|string|max:500',
         ]);
 
         $row->update([
-            'tgl_pengesahan'     => $data['tgl_pengesahan'],
-            'no_pengesahan'      => $data['no_pengesahan'],
+            'tgl_pengesahan' => $data['tgl_pengesahan'],
+            'no_pengesahan' => $data['no_pengesahan'],
             'catatan_verifikasi' => $data['catatan_verifikasi'] ?? $row->catatan_verifikasi,
         ]);
 
         ApprovalLog::create([
             'laporan_id' => $row->id,
-            'actor_id'   => $user->id,
+            'actor_id' => $user->id,
             'actor_role' => $user->role,
-            'action'     => ApprovalLog::ACT_VERIFIED, // atau ACT_PENGESAHAN jika kamu punya konstanta khusus
-            'level'      => ApprovalLog::LVL_SUBMISSION,
-            'note'       => 'Input pengesahan oleh Admin Fakultas',
+            'action' => ApprovalLog::ACT_VERIFIED, // atau ACT_PENGESAHAN jika kamu punya konstanta khusus
+            'level' => ApprovalLog::LVL_SUBMISSION,
+            'note' => 'Input pengesahan oleh Admin Fakultas',
         ]);
 
         return response()->json($row->fresh());
@@ -219,7 +224,7 @@ class LaporanSkpiController extends Controller
     public function decideWakadek(int $id, LaporanSkpiDecisionRequest $req)
     {
         $user = $req->user();
-        $this->mustRole($user->role, ['Wakadek','SuperAdmin']);
+        $this->mustRole($user->role, ['Wakadek', 'SuperAdmin']);
 
         $row = LaporanSkpi::findOrFail($id);
 
@@ -239,21 +244,21 @@ class LaporanSkpiController extends Controller
             $row->update(['status' => LaporanSkpi::ST_WAKADEK]);
             ApprovalLog::create([
                 'laporan_id' => $row->id,
-                'actor_id'   => $user->id,
+                'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action'     => ApprovalLog::ACT_APPROVED,
-                'level'      => ApprovalLog::LVL_WAKADEK,
-                'note'       => $req->input('note'),
+                'action' => ApprovalLog::ACT_APPROVED,
+                'level' => ApprovalLog::LVL_WAKADEK,
+                'note' => $req->input('note'),
             ]);
         } else {
             $row->update(['status' => LaporanSkpi::ST_REJECTED]);
             ApprovalLog::create([
                 'laporan_id' => $row->id,
-                'actor_id'   => $user->id,
+                'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action'     => ApprovalLog::ACT_REJECTED,
-                'level'      => ApprovalLog::LVL_WAKADEK,
-                'note'       => $req->input('note'),
+                'action' => ApprovalLog::ACT_REJECTED,
+                'level' => ApprovalLog::LVL_WAKADEK,
+                'note' => $req->input('note'),
             ]);
         }
 
@@ -268,7 +273,7 @@ class LaporanSkpiController extends Controller
     public function decideDekan(int $id, LaporanSkpiDecisionRequest $req)
     {
         $user = $req->user();
-        $this->mustRole($user->role, ['Dekan','SuperAdmin']);
+        $this->mustRole($user->role, ['Dekan', 'SuperAdmin']);
 
         $row = LaporanSkpi::findOrFail($id);
 
@@ -285,11 +290,11 @@ class LaporanSkpiController extends Controller
             $row->update(['status' => LaporanSkpi::ST_APPROVED]);
             ApprovalLog::create([
                 'laporan_id' => $row->id,
-                'actor_id'   => $user->id,
+                'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action'     => ApprovalLog::ACT_APPROVED,
-                'level'      => ApprovalLog::LVL_DEKAN,
-                'note'       => $req->input('note'),
+                'action' => ApprovalLog::ACT_APPROVED,
+                'level' => ApprovalLog::LVL_DEKAN,
+                'note' => $req->input('note'),
             ]);
 
             // generate file final
@@ -298,11 +303,11 @@ class LaporanSkpiController extends Controller
             $row->update(['status' => LaporanSkpi::ST_REJECTED]);
             ApprovalLog::create([
                 'laporan_id' => $row->id,
-                'actor_id'   => $user->id,
+                'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action'     => ApprovalLog::ACT_REJECTED,
-                'level'      => ApprovalLog::LVL_DEKAN,
-                'note'       => $req->input('note'),
+                'action' => ApprovalLog::ACT_REJECTED,
+                'level' => ApprovalLog::LVL_DEKAN,
+                'note' => $req->input('note'),
             ]);
         }
 
@@ -317,7 +322,7 @@ class LaporanSkpiController extends Controller
     public function regenerate(int $id, Request $req)
     {
         $user = $req->user();
-        $this->mustRole($user->role, ['SuperAdmin','AdminFakultas','Dekan']);
+        $this->mustRole($user->role, ['SuperAdmin', 'AdminFakultas', 'Dekan']);
 
         $row = LaporanSkpi::findOrFail($id);
 
@@ -334,11 +339,11 @@ class LaporanSkpiController extends Controller
 
         ApprovalLog::create([
             'laporan_id' => $row->id,
-            'actor_id'   => $user->id,
+            'actor_id' => $user->id,
             'actor_role' => $user->role,
-            'action'     => ApprovalLog::ACT_REGENERATED,
-            'level'      => null,
-            'note'       => $req->input('note'),
+            'action' => ApprovalLog::ACT_REGENERATED,
+            'level' => null,
+            'note' => $req->input('note'),
         ]);
 
         return response()->json($row->fresh());
@@ -356,7 +361,7 @@ class LaporanSkpiController extends Controller
             return response()->json(['message' => 'File belum tersedia'], 404);
         }
 
-        $rel = LaporanSkpi::dir().'/'.$row->file_laporan;
+        $rel = LaporanSkpi::dir() . '/' . $row->file_laporan;
 
         /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
         $disk = Storage::disk('public');
@@ -381,18 +386,18 @@ class LaporanSkpiController extends Controller
     private function inUserProdi(int $userProdiId, string $nim): bool
     {
         $idp = DB::table('ref_mahasiswa')->where('nim', $nim)->value('id_prodi');
-        return $idp && (int)$idp === (int)$userProdiId;
+        return $idp && (int) $idp === (int) $userProdiId;
     }
 
     // cek apakah laporan berada di fakultas user
     private function inUserFak(int $userFakId, int $laporanId): bool
     {
         $idf = DB::table('laporan_skpi as l')
-            ->join('ref_mahasiswa as m','m.nim','=','l.nim')
-            ->join('ref_prodi as p','p.id','=','m.id_prodi')
-            ->where('l.id',$laporanId)
+            ->join('ref_mahasiswa as m', 'm.nim', '=', 'l.nim')
+            ->join('ref_prodi as p', 'p.id', '=', 'm.id_prodi')
+            ->where('l.id', $laporanId)
             ->value('p.id_fakultas');
 
-        return $idf && (int)$idf === (int)$userFakId;
+        return $idf && (int) $idf === (int) $userFakId;
     }
 }

@@ -11,12 +11,28 @@ class KerjaPraktek extends Model
     protected $table = 'kerja_praktek';
     protected $fillable = ['nim', 'nama_kegiatan', 'file_sertifikat'];
 
-    protected $appends = ['file_url']; // tampilkan url di JSON
+    /**
+     * Eager-load relasi minimal agar aksesors nama_* tidak menimbulkan N+1.
+     */
+    protected $with = [
+        'mahasiswa:id,nim,nama_mahasiswa,id_prodi',
+        'mahasiswa.prodi:id,nama_prodi,id_fakultas',
+        'mahasiswa.prodi.fakultas:id,nama_fakultas',
+    ];
+
+    /**
+     * Tambahkan field turunan ke JSON.
+     */
+    protected $appends = ['file_url', 'nama_mhs', 'nama_prodi', 'nama_fakultas'];
+
+    /* ========= Relationships ========= */
 
     public function mahasiswa(): BelongsTo
     {
         return $this->belongsTo(RefMahasiswa::class, 'nim', 'nim');
     }
+
+    /* ========= Helpers ========= */
 
     // lokasi dasar di disk public
     public static function dir(): string
@@ -24,38 +40,7 @@ class KerjaPraktek extends Model
         return 'skpi/kp';
     }
 
-
-    /* ===== Scopes untuk filter ===== */
-    public function scopeOfNim($q, ?string $nim)
-    {
-        if ($nim) $q->where('nim', $nim);
-        return $q;
-    }
-    public function scopeOfProdi($q, ?int $idProdi)
-    {
-        if ($idProdi) $q->whereHas('mahasiswa', fn($m) => $m->where('id_prodi', $idProdi));
-        return $q;
-    }
-    public function scopeOfFakultas($q, ?int $idFakultas)
-    {
-        if ($idFakultas) {
-            $q->whereHas('mahasiswa.prodi', fn($p) => $p->where('id_fakultas', $idFakultas));
-        }
-        return $q;
-    }
-    public function scopeSearch($q, ?string $kw)
-    {
-        $kw = trim((string)$kw);
-        if ($kw !== '') {
-            $q->where(function ($w) use ($kw) {
-                $w->where('nama_kegiatan', 'like', "%{$kw}%")
-                    ->orWhere('nim', 'like', "%{$kw}%");
-            });
-        }
-        return $q;
-    }
-
-    // + optional: use Illuminate\Filesystem\FilesystemAdapter;
+    /* ========= Accessors ========= */
 
     public function getFileUrlAttribute(): ?string
     {
@@ -66,6 +51,72 @@ class KerjaPraktek extends Model
         /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
         $disk = Storage::disk('public');
 
-        return $disk->url($path);
+        // Storage::url biasanya mengembalikan '/storage/...' (relatif).
+        // Bungkus dengan url() agar menjadi absolut mengikuti host request (termasuk :8000 di dev).
+        $rel = $disk->url($path);
+        return url($rel);
+    }
+
+    public function getNamaMhsAttribute(): ?string
+    {
+        return optional($this->mahasiswa)->nama_mahasiswa;
+    }
+
+    public function getNamaProdiAttribute(): ?string
+    {
+        return optional($this->mahasiswa?->prodi)->nama_prodi;
+    }
+
+    public function getNamaFakultasAttribute(): ?string
+    {
+        return optional($this->mahasiswa?->prodi?->fakultas)->nama_fakultas;
+    }
+
+    /* ========= Scopes (Filters & Search) ========= */
+
+    public function scopeOfNim($q, ?string $nim)
+    {
+        if ($nim) $q->where('nim', $nim);
+        return $q;
+    }
+
+    public function scopeOfNama($q, ?string $nama)
+    {
+        $nama = trim((string)$nama);
+        if ($nama !== '') {
+            $q->whereHas('mahasiswa', fn($m) => $m->where('nama_mahasiswa', 'like', "%{$nama}%"));
+        }
+        return $q;
+    }
+
+    public function scopeOfProdi($q, ?int $idProdi)
+    {
+        if ($idProdi) {
+            $q->whereHas('mahasiswa', fn($m) => $m->where('id_prodi', $idProdi));
+        }
+        return $q;
+    }
+
+    public function scopeOfFakultas($q, ?int $idFakultas)
+    {
+        if ($idFakultas) {
+            $q->whereHas('mahasiswa.prodi', fn($p) => $p->where('id_fakultas', $idFakultas));
+        }
+        return $q;
+    }
+
+    public function scopeSearch($q, ?string $kw)
+    {
+        $kw = trim((string)$kw);
+        if ($kw !== '') {
+            $q->where(function ($w) use ($kw) {
+                $w->where('nama_kegiatan', 'like', "%{$kw}%")
+                  ->orWhere('nim', 'like', "%{$kw}%")
+                  ->orWhereHas('mahasiswa', fn($m) => $m->where('nama_mahasiswa', 'like', "%{$kw}%"))
+                  ->orWhereHas('mahasiswa.prodi', fn($p) => $p->where('nama_prodi', 'like', "%{$kw}%"))
+                  ->orWhereHas('mahasiswa.prodi.fakultas', fn($f) => $f->where('nama_fakultas', 'like', "%{$kw}%"));
+            });
+        }
+        return $q;
     }
 }

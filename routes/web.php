@@ -11,6 +11,17 @@ Route::get('/admin', fn () => view('admin.dashboard'))->name('admin.page');
 // Root → redirect ke login
 Route::get('/', fn() => redirect()->route('login.page'));
 
+// Halaman profil/password 
+Route::get('/admin/profile', fn () => view('admin.profile'))->name('admin.profile');
+Route::get('/admin/password', fn () => view('admin.password'))->name('admin.password');
+
+// (Optional) web logout, kalau nanti dipakai form POST non-API
+Route::post('/logout', function () {
+    // kalau pakai Sanctum token Bearer, logout via /api/logout sudah cukup.
+    // Ini hanya buat jaga-jaga redirect dari UI:
+    return redirect()->route('login.page');
+});
+
 // Laporan pages (FE)
 Route::prefix('/admin/laporan')->group(function () {
     Route::get('/', fn() => view('admin.laporan.index'))->name('laporan.index');

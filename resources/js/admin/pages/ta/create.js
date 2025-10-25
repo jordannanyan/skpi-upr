@@ -1,3 +1,4 @@
+// resources/js/admin/pages/ta/create.js
 import { api } from '../../../services/api'
 import { auth } from '../../../services/auth'
 
@@ -6,6 +7,20 @@ const bridge = document.getElementById('bridge')
 const ADMIN_URL = bridge?.dataset?.adminUrl || '/admin'
 
 let me = null, role = null
+
+const KAT_ALLOWED = ['skripsi','tesis','disertasi']
+const normKat = v => String(v || '').trim().toLowerCase()
+
+function setBusy(b) {
+  const btn = $('#btnSubmit')
+  btn.disabled = b
+  if (b) {
+    btn.dataset._old = btn.textContent
+    btn.textContent = 'Menyimpan...'
+  } else {
+    btn.textContent = btn.dataset._old || 'Simpan'
+  }
+}
 
 async function mustRole(){
   const { data } = await api.get('/me')
@@ -85,16 +100,22 @@ $('#selProdi')?.addEventListener('change', (e)=>{
 
 $('#btnSubmit')?.addEventListener('click', async ()=>{
   const nim = $('#selNim').value
-  const kategori = $('#inpKategori').value.trim()
-  const judul = $('#inpJudul').value.trim()
-  if (!nim || !kategori || !judul) return alert('Lengkapi NIM, Kategori, dan Judul.')
+  const kategori = normKat($('#selKategori').value)
+  const judul = ($('#inpJudul').value || '').trim()
 
+  if (!nim) return alert('Pilih NIM.')
+  if (!KAT_ALLOWED.includes(kategori)) return alert('Pilih kategori: Skripsi, Tesis, atau Disertasi.')
+  if (!judul) return alert('Judul tidak boleh kosong.')
+
+  setBusy(true)
   try{
     await api.post('/ta', { nim, kategori, judul })
     alert('Tersimpan.')
     window.location.replace(`${ADMIN_URL}/ta`)
   }catch(err){
     alert(err?.response?.data?.message || err.message)
+  }finally{
+    setBusy(false)
   }
 })
 
@@ -102,5 +123,8 @@ $('#btnSubmit')?.addEventListener('click', async ()=>{
   try{
     await mustRole()
     await loadFakultas()
-  }catch(e){ /* noop */ }
+  }catch(e){
+    auth.clear()
+    window.location.replace(bridge?.dataset?.loginUrl || '/login')
+  }
 })()

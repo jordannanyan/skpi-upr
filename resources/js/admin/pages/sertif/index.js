@@ -1,3 +1,4 @@
+// resources/js/admin/pages/sertif/index.js
 import { api } from '../../../services/api'
 import { auth } from '../../../services/auth'
 
@@ -7,10 +8,43 @@ let me = null
 let role = 'AdminJurusan'
 const bridge = document.getElementById('bridge')
 
+// elements
+const body = $('#sfBody')
+const inpKw = $('#sfKw')
+const inpNim = $('#sfNim')
+const inpKat = $('#sfKat')
+const selFak = $('#sfFak')
+const selPro = $('#sfProdi')
+
+const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, m => ({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+}[m]))
+
+// ==== Ambil nama/prodi/fakultas dari payload (akomodasi berbagai bentuk) ====
+const getNama = r => r?.nama_mhs ?? r?.mhs?.nama_mahasiswa ?? r?.mahasiswa?.nama_mahasiswa ?? '-'
+const getProdi = r => r?.nama_prodi ?? r?.prodi?.nama_prodi ?? r?.mhs?.prodi?.nama_prodi ?? r?.mahasiswa?.prodi?.nama_prodi ?? '-'
+const getFak   = r => r?.nama_fakultas ?? r?.prodi?.fakultas?.nama_fakultas ?? r?.mhs?.prodi?.fakultas?.nama_fakultas ?? r?.mahasiswa?.prodi?.fakultas?.nama_fakultas ?? '-'
+
+// ==== Perbaiki URL download agar sesuai origin (termasuk :8000) ====
+function normalizeFileUrl(u) {
+  if (!u) return null
+  try {
+    if (u.startsWith('/')) return u // relative path ok
+    const parsed = new URL(u, window.location.origin)
+    parsed.protocol = window.location.protocol
+    parsed.host = window.location.host
+    return parsed.toString()
+  } catch {
+    const m = u.match(/^https?:\/\/[^/]+(\/.*)$/i)
+    return m ? m[1] : u
+  }
+}
+
 function renderActions(r){
   const linkEdit = `<a class="btn btn-sm btn-outline-primary" href="/admin/sertifikasi/${r.id}/edit">Edit</a>`
-  const dl = r.file_url
-    ? `<a class="btn btn-sm btn-outline-secondary" target="_blank" href="${r.file_url}">Download</a>`
+  const fileUrl = normalizeFileUrl(r.file_url)
+  const dl = fileUrl
+    ? `<a class="btn btn-sm btn-outline-secondary" target="_blank" href="${fileUrl}">Download</a>`
     : ''
   const canDelete = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
   const del = canDelete
@@ -37,42 +71,99 @@ function applyScope(url){
   return url
 }
 
+// ==== Masters (Fakultas & Prodi) ====
+async function loadMasters(){
+  const [f,p] = await Promise.all([
+    api.get('/fakultas?per_page=100'),
+    api.get('/prodi?per_page=200'),
+  ])
+  const faks = f.data.data || f.data
+  const pros = p.data.data || p.data
+
+  selFak.innerHTML = `<option value="">— Semua —</option>`
+  faks.forEach(x=>{
+    const opt = document.createElement('option')
+    opt.value = x.id
+    opt.textContent = x.nama_fakultas || `Fakultas ${x.id}`
+    selFak.appendChild(opt)
+  })
+
+  selPro.innerHTML = `<option value="">— Semua —</option>`
+  pros.forEach(x=>{
+    const opt = document.createElement('option')
+    opt.value = x.id
+    opt.textContent = x.nama_prodi || `Prodi ${x.id}`
+    opt.dataset.fak = x.id_fakultas || ''
+    selPro.appendChild(opt)
+  })
+
+  const filterProdiByFak = ()=>{
+    const v = selFak.value
+    ;[...selPro.options].forEach((o,i)=>{
+      if (i===0) return
+      o.hidden = (v && (o.dataset.fak || '') !== v)
+    })
+    if (v) {
+      const cur = selPro.selectedOptions[0]
+      if (cur && (cur.dataset.fak||'') !== v) selPro.value = ''
+    }
+  }
+  selFak.addEventListener('change', filterProdiByFak)
+  filterProdiByFak()
+}
+
 async function loadSertif(){
+  body.innerHTML = `<tr><td colspan="8" class="text-center text-muted p-4">Memuat…</td></tr>`
+
   let url = '/sertifikasi?per_page=30'
-  const kw  = $('#sfKw')?.value?.trim()
-  const nim = $('#sfNim')?.value?.trim()
-  const kat = $('#sfKat')?.value?.trim()
+  const kw  = inpKw?.value?.trim()
+  const nim = inpNim?.value?.trim()
+  const kat = inpKat?.value?.trim()
+  const fkid = selFak?.value || ''
+  const prid = selPro?.value || ''
+
   if (kw)  url += '&q=' + encodeURIComponent(kw)
   if (nim) url += '&nim=' + encodeURIComponent(nim)
   if (kat) url += '&kategori=' + encodeURIComponent(kat)
+  if (fkid) url += '&fakultas_id=' + encodeURIComponent(fkid)
+  if (prid) url += '&prodi_id=' + encodeURIComponent(prid)
   url = applyScope(url)
 
   const { data } = await api.get(url)
   const rows = data.data || data
-  const body = $('#sfBody'); body.innerHTML = ''
+
   if (!rows.length){
-    body.innerHTML = `<tr><td colspan="6" class="text-center text-muted p-4">Tidak ada data</td></tr>`
+    body.innerHTML = `<tr><td colspan="8" class="text-center text-muted p-4">Tidak ada data</td></tr>`
     return
   }
-  rows.forEach(r=>{
-    const cert = r.file_url ? 'Ada' : '—'
-    const tr = document.createElement('tr')
-    tr.innerHTML = `
-      <td>${r.id}</td>
-      <td>${r.nim}</td>
-      <td>${r.kategori_sertifikasi || '-'}</td>
-      <td>${r.nama_sertifikasi || '-'}</td>
-      <td>${cert}</td>
-      <td class="d-flex flex-wrap gap-2">${renderActions(r)}</td>
+
+  body.innerHTML = rows.map(r=>{
+    const nama = escapeHtml(getNama(r))
+    const prodi = escapeHtml(getProdi(r))
+    const fak = escapeHtml(getFak(r))
+    const katv = escapeHtml(r.kategori_sertifikasi ?? r.kategori ?? '-')
+    const nm = escapeHtml(r.nama_sertifikasi ?? r.nama ?? '-')
+    const fileUrl = normalizeFileUrl(r.file_url)
+
+    return `
+      <tr>
+        <td>${r.id}</td>
+        <td><code>${escapeHtml(r.nim || '-')}</code></td>
+        <td>${nama}</td>
+        <td>${prodi}</td>
+        <td>${fak}</td>
+        <td>${katv}</td>
+        <td>${nm}</td>
+        <td class="d-flex flex-wrap gap-2">${renderActions({...r, file_url: fileUrl})}</td>
+      </tr>
     `
-    body.appendChild(tr)
-  })
+  }).join('')
 }
 
 $('#sfCari')?.addEventListener('click', loadSertif)
-$('#sfKw')?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
-$('#sfNim')?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
-$('#sfKat')?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
+inpKw?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
+inpNim?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
+inpKat?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
 
 // hapus
 $('#sfBody')?.addEventListener('click', async (e)=>{
@@ -91,6 +182,7 @@ $('#sfBody')?.addEventListener('click', async (e)=>{
 ;(async function init(){
   try{
     await loadMe()
+    await loadMasters()
     await loadSertif()
   }catch(err){
     auth.clear()
