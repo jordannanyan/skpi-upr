@@ -24,22 +24,62 @@ function badge(st){
 }
 
 function roleDefaultFilter(base){
-  if (role === 'Kajur')         base += '&status=submitted&prodi_id='   + (me?.id_prodi ?? '')
-  if (role === 'AdminJurusan')  base += '&prodi_id='                    + (me?.id_prodi ?? '')
-  if (role === 'AdminFakultas') base += '&fakultas_id='                 + (me?.id_fakultas ?? '')
-  if (role === 'Wakadek')       base += '&status=verified&fakultas_id=' + (me?.id_fakultas ?? '')
+  if (role === 'Kajur')         base += '&status=submitted&prodi_id='    + (me?.id_prodi ?? '')
+  if (role === 'AdminJurusan')  base += '&prodi_id='                     + (me?.id_prodi ?? '')
+  if (role === 'AdminFakultas') base += '&fakultas_id='                  + (me?.id_fakultas ?? '')
+  if (role === 'Wakadek')       base += '&status=verified&fakultas_id='  + (me?.id_fakultas ?? '')
   if (role === 'Dekan')         base += '&status=wakadek_ok&fakultas_id='+ (me?.id_fakultas ?? '')
   return base
 }
 
 function renderActions(r){
-  const linkEdit = `<a class="btn btn-sm btn-outline-primary" href="/admin/laporan/${r.id}/edit">Detail</a>`
-  const dl = r.file_url ? `<a class="btn btn-sm btn-outline-secondary" target="_blank" href="${r.file_url}">File</a>` : ''
-  const gen = (r.status==='approved')
-    ? `<button class="btn btn-sm btn-outline-dark" data-act="generate" data-id="${r.id}">Generate</button>`
-    : ''
-  return [linkEdit, dl, gen].filter(Boolean).join(' ')
+  const parts = []
+
+  // Detail
+  parts.push(`
+    <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
+       href="/admin/laporan/${r.id}/edit"
+       title="Detail" aria-label="Detail">
+      <i class="bi bi-eye"></i>
+    </a>
+  `)
+
+  // File (jika ada)
+  if (r.file_url) {
+    parts.push(`
+      <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center"
+         target="_blank" href="${r.file_url}"
+         title="Lihat File" aria-label="Lihat File">
+        <i class="bi bi-file-earmark"></i>
+      </a>
+    `)
+  }
+
+  // Regenerate (approved)
+  if (r.status === 'approved') {
+    parts.push(`
+      <button class="btn btn-sm btn-outline-dark d-inline-flex align-items-center justify-content-center"
+              data-act="generate" data-id="${r.id}"
+              title="Generate Ulang" aria-label="Generate Ulang">
+        <i class="bi bi-arrow-clockwise"></i>
+      </button>
+    `)
+  }
+
+  // Delete (SuperAdmin)
+  if (role === 'SuperAdmin') {
+    parts.push(`
+      <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
+              data-act="delete" data-id="${r.id}"
+              title="Hapus" aria-label="Hapus">
+        <i class="bi bi-trash"></i>
+      </button>
+    `)
+  }
+
+  return parts.join(' ')
 }
+
 
 async function loadMe(){
   const { data } = await api.get('/me')
@@ -95,17 +135,40 @@ $('#lapCari')?.addEventListener('click', loadLaporan)
 $('#lapStatus')?.addEventListener('change', loadLaporan)
 $('#lapNim')?.addEventListener('keydown', (e)=>{ if(e.key==='Enter') loadLaporan() })
 
-// handle generate dari list
+// handle actions dari list
 $('#lapBody')?.addEventListener('click', async (e)=>{
-  const btn = e.target.closest('button[data-act="generate"]')
-  if(!btn) return
-  const id = btn.dataset.id
-  try{
-    const { data } = await api.post(`/laporan-skpi/${id}/regenerate`)
-    if (data.file_url) window.open(data.file_url,'_blank')
-    await loadLaporan()
-  }catch(err){
-    alert(err?.response?.data?.message || err.message)
+  const btnGen = e.target.closest('button[data-act="generate"]')
+  const btnDel = e.target.closest('button[data-act="delete"]')
+
+  // Regenerate
+  if (btnGen) {
+    const id = btnGen.dataset.id
+    btnGen.disabled = true
+    try{
+      const { data } = await api.post(`/laporan-skpi/${id}/regenerate`)
+      if (data.file_url) window.open(data.file_url,'_blank')
+      await loadLaporan()
+    }catch(err){
+      alert(err?.response?.data?.message || err.message)
+    }finally{
+      btnGen.disabled = false
+    }
+    return
+  }
+
+  // Delete (SuperAdmin only)
+  if (btnDel) {
+    const id = btnDel.dataset.id
+    if (!confirm(`Hapus laporan #${id}? Tindakan ini tidak bisa dibatalkan.`)) return
+    btnDel.disabled = true
+    try{
+      await api.delete(`/laporan-skpi/${id}`)
+      await loadLaporan()
+    }catch(err){
+      alert(err?.response?.data?.message || err.message)
+    }finally{
+      btnDel.disabled = false
+    }
   }
 })
 

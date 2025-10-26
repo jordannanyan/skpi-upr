@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\LaporanSkpiSubmitRequest;
-use Illuminate\Support\Facades\DB;
 use App\Http\Requests\LaporanSkpiDecisionRequest;
-use App\Models\LaporanSkpi;
+use App\Http\Requests\LaporanSkpiSubmitRequest;
 use App\Models\ApprovalLog;
+use App\Models\LaporanSkpi;
 use App\Services\LaporanSkpiService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class LaporanSkpiController extends Controller
@@ -24,7 +25,7 @@ class LaporanSkpiController extends Controller
     // GET /api/laporan-skpi?nim=&prodi_id=&fakultas_id=&status=&q=&per_page=
     public function index(Request $req)
     {
-        $per = (int) ($req->integer('per_page') ?: 25);
+        $per  = (int) ($req->integer('per_page') ?: 25);
         $user = $req->user();
 
         $q = LaporanSkpi::query()
@@ -34,36 +35,25 @@ class LaporanSkpiController extends Controller
                 'mhs.prodi.fakultas:id,nama_fakultas',
                 'pengaju:id,username,role',
             ])
-            // filter manual
             ->ofNim($req->string('nim'))
             ->ofProdi($req->integer('prodi_id'))
             ->ofFakultas($req->integer('fakultas_id'))
-            ->ofStatus($req->string('status'))
+            // status filter: case-insensitive
+            ->when(trim((string)$req->string('status')) !== '', function ($qq) use ($req) {
+                $st = strtolower((string)$req->string('status'));
+                $qq->where(DB::raw('LOWER(status)'), $st);
+            })
             ->when(trim((string) $req->string('q')) !== '', function ($qq) use ($req) {
                 $kw = trim((string) $req->string('q'));
                 $qq->where(function ($w) use ($kw) {
                     $w->where('no_pengesahan', 'like', "%{$kw}%")
-                        ->orWhere('catatan_verifikasi', 'like', "%{$kw}%")
-                        ->orWhere('nim', 'like', "%{$kw}%");
+                      ->orWhere('catatan_verifikasi', 'like', "%{$kw}%")
+                      ->orWhere('nim', 'like', "%{$kw}%");
                 });
             });
 
-
-        // ===== Default scope (kalau filter kosong), cegah bocor data
-        $hasProdi = $req->filled('prodi_id');
-        $hasFak = $req->filled('fakultas_id');
-
-        if ($user->isProdiScoped() && !$hasProdi) {
-            $q->whereHas('mhs', fn($mq) => $mq->where('id_prodi', $user->id_prodi));
-        }
-        if ($user->isFacultyScoped() && !$hasFak) {
-            // join ke prodi melalui mhs
-            $q->whereHas('mhs', function ($mq) use ($user) {
-                $mq->whereIn('id_prodi', function ($sub) use ($user) {
-                    $sub->from('ref_prodi')->select('id')->where('id_fakultas', $user->id_fakultas);
-                });
-            });
-        }
+        // Paksa scope SELALU (abaikan manipulasi filter client)
+        $this->applyScope($q, $user);
 
         $q->latest('id');
 
@@ -106,15 +96,24 @@ class LaporanSkpiController extends Controller
         // scope: nim harus milik prodi user (untuk role prodi-scoped)
         if ($user->isProdiScoped()) {
             abort_unless($this->inUserProdi($user->id_prodi, $data['nim']), 403, 'Out of prodi scope');
+        } elseif ($user->isFacultyScoped()) {
+            // fakultas-scoped boleh submit untuk semua prodi di fakultasnya
+            $idf = DB::table('ref_mahasiswa as m')
+                ->join('ref_prodi as p', 'p.id', '=', 'm.id_prodi')
+                ->where('m.nim', $data['nim'])
+                ->value('p.id_fakultas');
+            abort_unless($idf && (int)$idf === (int)$user->id_fakultas, 403, 'Out of faculty scope');
         }
 
-        // larang duplikasi pengajuan berjalan
+        // larang duplikasi pengajuan berjalan (case-insensitive)
+        $running = [
+            LaporanSkpi::ST_SUBMITTED,
+            LaporanSkpi::ST_VERIFIED,
+            LaporanSkpi::ST_WAKADEK,
+        ];
         $exists = LaporanSkpi::where('nim', $data['nim'])
-            ->whereIn('status', [
-                LaporanSkpi::ST_SUBMITTED,
-                LaporanSkpi::ST_VERIFIED,
-                LaporanSkpi::ST_WAKADEK,
-            ])->exists();
+            ->whereIn(DB::raw('LOWER(status)'), array_map('strtolower', $running))
+            ->exists();
         if ($exists) {
             return response()->json(['message' => 'Masih ada pengajuan berjalan untuk NIM ini'], 422);
         }
@@ -141,7 +140,7 @@ class LaporanSkpiController extends Controller
     }
 
     /* =========================
-       Tahap 2: Verifikasi Kajur -> VERIFIED
+       Tahap 2: Verifikasi Kajur -> VERIFIED / REJECTED
        ========================= */
 
     // POST /api/laporan-skpi/{id}/verify  (KHUSUS KAJUR)
@@ -155,26 +154,39 @@ class LaporanSkpiController extends Controller
         // scope prodi
         abort_unless($this->inUserProdi($user->id_prodi, $row->nim), 403, 'Out of prodi scope');
 
-        if ($row->status !== LaporanSkpi::ST_SUBMITTED) {
+        if (!$this->isStatus($row, LaporanSkpi::ST_SUBMITTED)) {
             return response()->json(['message' => 'Status tidak valid untuk verifikasi Kajur'], 422);
         }
 
-        $row->update(['status' => LaporanSkpi::ST_VERIFIED]);
+        $approve = filter_var($req->input('approve', true), FILTER_VALIDATE_BOOL);
 
-        ApprovalLog::create([
-            'laporan_id' => $row->id,
-            'actor_id' => $user->id,
-            'actor_role' => $user->role,
-            'action' => ApprovalLog::ACT_VERIFIED,
-            'level' => ApprovalLog::LVL_SUBMISSION,
-            'note' => $req->input('note'),
-        ]);
+        if ($approve) {
+            $row->update(['status' => LaporanSkpi::ST_VERIFIED]);
+            ApprovalLog::create([
+                'laporan_id' => $row->id,
+                'actor_id' => $user->id,
+                'actor_role' => $user->role,
+                'action' => ApprovalLog::ACT_VERIFIED,
+                'level' => ApprovalLog::LVL_SUBMISSION,
+                'note' => $req->input('note'),
+            ]);
+        } else {
+            $row->update(['status' => LaporanSkpi::ST_REJECTED]);
+            ApprovalLog::create([
+                'laporan_id' => $row->id,
+                'actor_id' => $user->id,
+                'actor_role' => $user->role,
+                'action' => ApprovalLog::ACT_REJECTED,
+                'level' => ApprovalLog::LVL_SUBMISSION,
+                'note' => $req->input('note'),
+            ]);
+        }
 
-        return response()->json($row->load('mhs', 'pengaju'));
+        return response()->json($row->fresh()->load('mhs', 'pengaju'));
     }
 
     /* =========================
-       (Baru) Pengesahan Admin Fakultas (isi no/tgl) — TANPA ubah status
+       Pengesahan Admin Fakultas (isi no/tgl) — TANPA ubah status
        ========================= */
 
     // POST /api/laporan-skpi/{id}/pengesahan
@@ -188,7 +200,7 @@ class LaporanSkpiController extends Controller
         // scope fakultas
         abort_unless($this->inUserFak($user->id_fakultas, $row->id), 403, 'Out of faculty scope');
 
-        if ($row->status !== LaporanSkpi::ST_VERIFIED) {
+        if (!$this->isStatus($row, LaporanSkpi::ST_VERIFIED)) {
             return response()->json(['message' => 'Harus status VERIFIED (oleh Kajur)'], 422);
         }
 
@@ -208,7 +220,7 @@ class LaporanSkpiController extends Controller
             'laporan_id' => $row->id,
             'actor_id' => $user->id,
             'actor_role' => $user->role,
-            'action' => ApprovalLog::ACT_VERIFIED, // atau ACT_PENGESAHAN jika kamu punya konstanta khusus
+            'action' => ApprovalLog::ACT_VERIFIED, // atau ACT_PENGESAHAN
             'level' => ApprovalLog::LVL_SUBMISSION,
             'note' => 'Input pengesahan oleh Admin Fakultas',
         ]);
@@ -231,7 +243,7 @@ class LaporanSkpiController extends Controller
         // scope fakultas
         abort_unless($this->inUserFak($user->id_fakultas, $row->id), 403, 'Out of faculty scope');
 
-        if ($row->status !== LaporanSkpi::ST_VERIFIED) {
+        if (!$this->isStatus($row, LaporanSkpi::ST_VERIFIED)) {
             return response()->json(['message' => 'Status tidak valid untuk persetujuan Wakadek'], 422);
         }
         if (!$row->no_pengesahan || !$row->tgl_pengesahan) {
@@ -280,7 +292,7 @@ class LaporanSkpiController extends Controller
         // scope fakultas
         abort_unless($this->inUserFak($user->id_fakultas, $row->id), 403, 'Out of faculty scope');
 
-        if ($row->status !== LaporanSkpi::ST_WAKADEK) {
+        if (!$this->isStatus($row, LaporanSkpi::ST_WAKADEK)) {
             return response()->json(['message' => 'Status tidak valid untuk persetujuan Dekan'], 422);
         }
 
@@ -329,9 +341,12 @@ class LaporanSkpiController extends Controller
         // scope fakultas
         if ($user->isFacultyScoped()) {
             abort_unless($this->inUserFak($user->id_fakultas, $row->id), 403, 'Out of faculty scope');
+        } elseif ($user->isProdiScoped()) {
+            // prodi-scoped tidak boleh regenerate
+            abort(403, 'Forbidden');
         }
 
-        if ($row->status !== LaporanSkpi::ST_APPROVED) {
+        if (!$this->isStatus($row, LaporanSkpi::ST_APPROVED)) {
             return response()->json(['message' => 'Hanya laporan APPROVED yang bisa di-generate ulang'], 422);
         }
 
@@ -354,9 +369,18 @@ class LaporanSkpiController extends Controller
        ========================= */
 
     // GET /api/laporan-skpi/{id}/download
-    public function download(int $id)
+    public function download(int $id, Request $req)
     {
+        $user = $req->user();
         $row = LaporanSkpi::findOrFail($id);
+
+        // scope check
+        if ($user->isProdiScoped()) {
+            abort_unless($this->inUserProdi($user->id_prodi, $row->nim), 403, 'Out of prodi scope');
+        } elseif ($user->isFacultyScoped()) {
+            abort_unless($this->inUserFak($user->id_fakultas, $row->id), 403, 'Out of faculty scope');
+        }
+
         if (!$row->file_laporan) {
             return response()->json(['message' => 'File belum tersedia'], 404);
         }
@@ -374,12 +398,49 @@ class LaporanSkpiController extends Controller
     }
 
     /* =========================
+       DELETE /api/laporan-skpi/{id}  (SuperAdmin only)
+       ========================= */
+    public function destroy(int $id, Request $req)
+    {
+        $user = $req->user();
+        $this->mustRole($user->role, ['SuperAdmin']); // hanya SuperAdmin
+
+        $row = LaporanSkpi::findOrFail($id);
+
+        DB::transaction(function () use ($row) {
+            // hapus file jika ada
+            if ($row->file_laporan) {
+                $rel = LaporanSkpi::dir() . '/' . $row->file_laporan;
+                $disk = Storage::disk('public');
+                if ($disk->exists($rel)) {
+                    $disk->delete($rel);
+                }
+            }
+
+            // hapus approval logs (jika tidak cascade)
+            if (method_exists($row, 'approvals')) {
+                $row->approvals()->delete();
+            }
+
+            $row->delete();
+        });
+
+        return response()->json(['message' => 'Laporan dihapus']);
+    }
+
+    /* =========================
        Helpers
        ========================= */
 
     private function mustRole(string $role, array $allowed): void
     {
         abort_unless(in_array($role, $allowed, true), 403, 'Forbidden');
+    }
+
+    // case-insensitive status checker
+    private function isStatus(LaporanSkpi $row, string $expected): bool
+    {
+        return strtolower((string)$row->status) === strtolower($expected);
     }
 
     // cek apakah NIM milik prodi tertentu
@@ -399,5 +460,15 @@ class LaporanSkpiController extends Controller
             ->value('p.id_fakultas');
 
         return $idf && (int) $idf === (int) $userFakId;
+    }
+
+    // Paksa scope ke query list
+    private function applyScope(Builder $q, $user): void
+    {
+        if ($user->isProdiScoped()) {
+            $q->whereHas('mhs', fn($mq) => $mq->where('id_prodi', $user->id_prodi));
+        } elseif ($user->isFacultyScoped()) {
+            $q->whereHas('mhs.prodi', fn($p) => $p->where('id_fakultas', $user->id_fakultas));
+        }
     }
 }

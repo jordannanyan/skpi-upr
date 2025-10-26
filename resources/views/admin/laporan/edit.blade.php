@@ -43,6 +43,29 @@
 
       <hr>
 
+      <!-- Tahapan & Tindakan -->
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="border rounded p-3">
+            <div class="small fw-semibold mb-2">Tahapan Pengajuan</div>
+            <ol class="list-group list-group-numbered" id="boxStepper">
+              <!-- diisi JS: Submitted -> Verified -> Wakadek OK -> Approved -->
+            </ol>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="border rounded p-3">
+            <div class="small fw-semibold mb-2">Yang Perlu Anda Lakukan</div>
+            <div id="boxNextAction" class="alert alert-info py-2 mb-2 d-none"></div>
+            <ul id="boxRoleChecklist" class="small mb-0">
+              <!-- diisi JS sesuai role -->
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <hr>
+
       <!-- Form khusus Admin Fakultas (pengesahan) -->
       <div id="formPengesahan" class="d-none">
         <div class="small fw-semibold mb-2">Pengesahan (Admin Fakultas)</div>
@@ -69,6 +92,104 @@
       <!-- Aksi verifikasi/approve sesuai role -->
       <div class="d-flex flex-wrap gap-2" id="boxActions">
         <!-- diisi tombol sesuai role oleh JS -->
+      </div>
+
+      <hr>
+
+      <!-- Info Mahasiswa -->
+      <div class="row g-3">
+        <div class="col-12">
+          <div class="small fw-semibold mb-2">Informasi Mahasiswa</div>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="small text-muted">Nama</div>
+              <div id="mNama" class="fw-semibold">-</div>
+            </div>
+            <div class="col-md-4">
+              <div class="small text-muted">Program Studi</div>
+              <div id="mProdi" class="fw-semibold">-</div>
+            </div>
+            <div class="col-md-4">
+              <div class="small text-muted">Fakultas</div>
+              <div id="mFak" class="fw-semibold">-</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SKOR CPL -->
+        <div class="col-12">
+          <div class="small fw-semibold mb-2">Skor CPL</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:120px;">Kode CPL</th>
+                  <th>Nama CPL</th>
+                  <th style="width:120px;">Skor</th>
+                </tr>
+              </thead>
+              <tbody id="tblCplBody">
+                <tr><td colspan="3" class="text-muted">Memuat…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TA & KP -->
+        <div class="col-md-6">
+          <div class="small fw-semibold mb-2">Tugas Akhir</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Judul</th>
+                  <th style="width:90px;">Tahun</th>
+                  <th style="width:90px;">Nilai</th>
+                </tr>
+              </thead>
+              <tbody id="tblTaBody">
+                <tr><td colspan="3" class="text-muted">Memuat…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="small fw-semibold mb-2">Kerja Praktek</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Judul/Lokasi</th>
+                  <th style="width:90px;">Tahun</th>
+                  <th style="width:90px;">Nilai</th>
+                </tr>
+              </thead>
+              <tbody id="tblKpBody">
+                <tr><td colspan="3" class="text-muted">Memuat…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Sertifikat -->
+        <div class="col-12">
+          <div class="small fw-semibold mb-2">Sertifikat</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Nama Sertifikat</th>
+                  <th>Penyelenggara</th>
+                  <th style="width:90px;">Tahun</th>
+                  <th style="width:140px;">No. Sertifikat</th>
+                </tr>
+              </thead>
+              <tbody id="tblSertBody">
+                <tr><td colspan="4" class="text-muted">Memuat…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <div class="mt-3">

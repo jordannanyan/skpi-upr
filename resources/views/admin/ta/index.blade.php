@@ -8,38 +8,47 @@
 @endpush
 
 @section('content')
-{{-- Filter (di dalam card, seperti KP) --}}
+<div id="bridge" data-admin-url="{{ url('/admin') }}" data-login-url="{{ url('/login') }}"></div>
+
+{{-- Filter --}}
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
     <div class="row g-2 align-items-end">
-      <div class="col-md-3">
+      <div class="col-md-4">
         <label class="form-label small text-muted">Cari (judul/kategori)</label>
         <input type="text" id="taKw" class="form-control" placeholder="mis. Sistem / Jaringan">
       </div>
-      <div class="col-md-2">
+      <div class="col-md-3">
         <label class="form-label small text-muted">Filter NIM</label>
         <input type="text" id="taNim" class="form-control" placeholder="mis. 22xx">
       </div>
-      <div class="col-md-3">
-        <label class="form-label small text-muted">Fakultas</label>
-        <select id="taFak" class="form-select">
-          <option value="">— Semua —</option>
-        </select>
+
+      {{-- Khusus SuperAdmin: Fakultas & Prodi --}}
+      <div id="roleFilters" class="d-none">
+        <div class="row g-2">
+          <div class="col-md-3">
+            <label class="form-label small text-muted">Fakultas</label>
+            <select id="taFak" class="form-select">
+              <option value="">— Semua —</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">Prodi</label>
+            <select id="taProdi" class="form-select">
+              <option value="">— Semua —</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div class="col-md-3">
-        <label class="form-label small text-muted">Prodi</label>
-        <select id="taProdi" class="form-select">
-          <option value="">— Semua —</option>
-        </select>
-      </div>
-      <div class="col-md-1 d-grid">
-        <button class="btn btn-outline-secondary" id="taCari">Terapkan</button>
+
+      <div class="col-md-2 d-grid mt-2 mt-md-0">
+        <button class="btn btn-outline-secondary mt-2" id="taCari">Terapkan</button>
       </div>
     </div>
   </div>
 </div>
 
-{{-- Toolbar Aksi (Tambah TA) — sama seperti KP --}}
+{{-- Toolbar Aksi (Tambah TA) --}}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div></div>
   <a href="{{ route('ta.create') }}" class="btn btn-primary" id="btnGoCreate">
@@ -58,7 +67,7 @@
         <th>Fakultas</th>
         <th style="width:160px;">Kategori</th>
         <th>Judul</th>
-        <th style="width:220px;">Aksi</th>
+        <th>Aksi</th>
       </tr>
     </thead>
     <tbody id="taBody">

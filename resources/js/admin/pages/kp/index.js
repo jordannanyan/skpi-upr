@@ -2,181 +2,201 @@
 import { api } from '../../../services/api'
 import { auth } from '../../../services/auth'
 
-const $ = s => document.querySelector(s)
-const $$ = s => document.querySelectorAll(s)
+const $  = s => document.querySelector(s)
+const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
+const isAuthError = err => [401,419].includes(err?.response?.status)
 
-let me = null
-let role = 'AdminJurusan'
-const bridge = document.getElementById('bridge')
+const bridge   = document.getElementById('bridge')
+const ADMIN_URL= bridge?.dataset?.adminUrl || '/admin'
+const LOGIN_URL= bridge?.dataset?.loginUrl || '/login'
+const COLS     = (() => document.querySelectorAll('table thead th').length || 7)()
 
-const body = $('#kpBody')
-const info = $('#kpInfo')
-const inpKw = $('#kpKw')
-const inpNim = $('#kpNim')
-const inpNama = $('#kpNama')
-const selFak = $('#kpFak')
-const selPro = $('#kpProdi')
+// elements
+const body    = $('#kpBody')
+const info    = $('#kpInfo')
+const inpKw   = $('#kpKw')
+const inpNim  = $('#kpNim')
+const selFak  = $('#kpFak')
+const selPro  = $('#kpProdi')
+const roleBox = $('#roleFilters')
 
-let page = 1, last = 1
+let me=null, role='AdminJurusan'
+let page=1, last=1
 
-const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, m => ({
-  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-}[m]))
-
-// ===== Normalisasi URL file (perbaiki kasus localhost vs :8000)
-function normalizeFileUrl(u) {
+// helpers
+const getNama = r => r?.nama_mhs ?? r?.mhs?.nama_mahasiswa ?? r?.mahasiswa?.nama_mahasiswa ?? '-'
+const getProdi= r => r?.nama_prodi ?? r?.prodi?.nama_prodi ?? r?.mhs?.prodi?.nama_prodi ?? r?.mahasiswa?.prodi?.nama_prodi ?? '-'
+const getFak  = r => r?.nama_fakultas ?? r?.prodi?.fakultas?.nama_fakultas ?? r?.mhs?.prodi?.fakultas?.nama_fakultas ?? r?.mahasiswa?.prodi?.fakultas?.nama_fakultas ?? '-'
+const normalizeFileUrl = (u)=>{
   if (!u) return null
   try {
-    // Jika sudah relatif (/storage/...), langsung pakai
     if (u.startsWith('/')) return u
     const parsed = new URL(u, window.location.origin)
-    // paksa origin mengikuti halaman saat ini (termasuk :8000)
     parsed.protocol = window.location.protocol
-    parsed.host = window.location.host
+    parsed.host     = window.location.host
     return parsed.toString()
   } catch {
-    // fallback: coba ambil pathname jika ada "http(s)://host/path"
     const m = u.match(/^https?:\/\/[^/]+(\/.*)$/i)
     return m ? m[1] : u
   }
 }
+function showMsg(msg){ body.innerHTML = `<tr><td colspan="${COLS}" class="text-center text-muted p-4">${esc(msg)}</td></tr>` }
 
-// ===== Ambil nama/prodi/fakultas dari payload
-function getNama(r){ return r?.nama_mhs ?? r?.mhs?.nama_mahasiswa ?? '-' }
-function getProdi(r){ return r?.nama_prodi ?? r?.prodi?.nama_prodi ?? '-' }
-function getFak(r){ return r?.nama_fakultas ?? r?.prodi?.fakultas?.nama_fakultas ?? '-' }
-
-// ===== Aksi per baris
-function renderActions(r){
-  const linkEdit = `<a class="btn btn-sm btn-outline-primary" href="/admin/kp/${r.id}/edit">Edit</a>`
-  const fileUrl = normalizeFileUrl(r.file_url)
-  const dl = fileUrl
-    ? `<a class="btn btn-sm btn-outline-secondary" target="_blank" href="${fileUrl}">Download</a>`
-    : ''
-  const canDelete = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
-  const del = canDelete
-    ? `<button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${r.id}">Hapus</button>`
-    : ''
-  return [linkEdit, dl, del].filter(Boolean).join(' ')
-}
-
-async function loadMe(){
-  const { data } = await api.get('/me')
-  me = data
-  role = data.role
-  const canCreate = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
-  if (!canCreate) $('#btnGoCreate')?.classList.add('d-none')
-}
-
-function applyScope(url){
-  if (role === 'AdminJurusan' || role === 'Kajur') {
-    if (me?.id_prodi) url += `&prodi_id=${me.id_prodi}`
+// scoping tanpa menampilkan dropdown utk non-SuperAdmin
+function roleDefaultFilter(url){
+  if ((role==='AdminJurusan' || role==='Kajur') && me?.id_prodi) {
+    url += `&prodi_id=${encodeURIComponent(me.id_prodi)}`
   }
-  if (['AdminFakultas','Wakadek','Dekan'].includes(role)) {
-    if (me?.id_fakultas) url += `&fakultas_id=${me.id_fakultas}`
+  if (['AdminFakultas','Wakadek','Dekan'].includes(role) && me?.id_fakultas) {
+    url += `&fakultas_id=${encodeURIComponent(me.id_fakultas)}`
   }
   return url
 }
 
-// ===== Masters (dropdown Fakultas & Prodi)
-async function loadMasters(){
-  const [f,p] = await Promise.all([
-    api.get('/fakultas?per_page=100'),
-    api.get('/prodi?per_page=200'),
-  ])
-  const faks = f.data.data || f.data
-  const pros = p.data.data || p.data
+function renderActions(r){
+  const edit = `
+    <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
+       href="${ADMIN_URL}/kp/${r.id}/edit"
+       title="Edit KP" aria-label="Edit">
+      <i class="bi bi-pencil-square"></i>
+    </a>`
 
-  selFak.innerHTML = `<option value="">— Semua —</option>`
-  faks.forEach(x=>{
-    const opt = document.createElement('option')
-    opt.value = x.id
-    opt.textContent = x.nama_fakultas || `Fakultas ${x.id}`
-    selFak.appendChild(opt)
-  })
+  const dl = r.file_url ? `
+    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center"
+       target="_blank" href="${esc(r.file_url)}"
+       title="Download Berkas" aria-label="Download">
+      <i class="bi bi-download"></i>
+    </a>` : ''
 
-  selPro.innerHTML = `<option value="">— Semua —</option>`
-  pros.forEach(x=>{
-    const opt = document.createElement('option')
-    opt.value = x.id
-    opt.textContent = x.nama_prodi || `Prodi ${x.id}`
-    opt.dataset.fak = x.id_fakultas || ''
-    selPro.appendChild(opt)
-  })
+  const del = (role === 'SuperAdmin') ? `
+    <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
+            data-act="del" data-id="${r.id}"
+            title="Hapus KP" aria-label="Hapus">
+      <i class="bi bi-trash"></i>
+    </button>` : ''
 
-  // filter prodi by fakultas (client-side)
-  const filterProdiByFak = ()=>{
-    const v = selFak.value
-    ;[...selPro.options].forEach((o,i)=>{
-      if (i===0) return
-      o.hidden = (v && (o.dataset.fak || '') !== v)
-    })
-    if (v) {
-      const cur = selPro.selectedOptions[0]
-      if (cur && (cur.dataset.fak||'') !== v) selPro.value = ''
-    }
+  return [edit, dl, del].filter(Boolean).join(' ')
+}
+
+
+async function loadMe(){
+  const { data } = await api.get('/me')
+  me = data; role = data.role
+  // tombol tambah hanya untuk peran tertentu
+  const canCreate = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
+  if (!canCreate) $('#btnGoCreate')?.classList.add('d-none')
+
+  // Dropdown Fakultas/Prodi hanya untuk SuperAdmin
+  if (role === 'SuperAdmin') {
+    roleBox?.classList.remove('d-none')
+    await loadMasters()
+  } else {
+    roleBox?.classList.add('d-none')
   }
-  selFak.addEventListener('change', filterProdiByFak)
-  filterProdiByFak()
+}
+
+async function loadMasters(){
+  try{
+    const [f,p] = await Promise.all([
+      api.get('/fakultas?per_page=100'),
+      api.get('/prodi?per_page=200'),
+    ])
+    const faks = f.data.data || f.data
+    const pros = p.data.data || p.data
+
+    selFak.innerHTML = `<option value="">— Semua —</option>`
+    faks.forEach(x=>{
+      const o = document.createElement('option')
+      o.value = x.id
+      o.textContent = x.nama_fakultas || `Fakultas ${x.id}`
+      selFak.appendChild(o)
+    })
+
+    selPro.innerHTML = `<option value="">— Semua —</option>`
+    pros.forEach(x=>{
+      const o = document.createElement('option')
+      o.value = x.id
+      o.textContent = x.nama_prodi || `Prodi ${x.id}`
+      o.dataset.fak = x.id_fakultas || ''
+      selPro.appendChild(o)
+    })
+
+    selFak.addEventListener('change', ()=>{
+      const v = selFak.value
+      ;[...selPro.options].forEach((o,i)=>{
+        if (i===0) return
+        o.hidden = (v && (o.dataset.fak || '') !== v)
+      })
+      const cur = selPro.selectedOptions[0]
+      if (v && cur && (cur.dataset.fak||'') !== v) selPro.value = ''
+    })
+  }catch(err){
+    if (isAuthError(err)) throw err
+    alert(err?.response?.data?.message || err.message || 'Gagal memuat master data')
+  }
 }
 
 async function loadKP(pageWant=1){
-  body.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-4">Memuat…</td></tr>`
+  showMsg('Memuat…')
+  try{
+    let url = `/kp?per_page=30&page=${pageWant}`
+    const kw  = (inpKw?.value || '').trim()
+    const nim = (inpNim?.value || '').trim()
+    if (kw)  url += `&q=${encodeURIComponent(kw)}`
+    if (nim) url += `&nim=${encodeURIComponent(nim)}`
 
-  let url = `/kp?per_page=30&page=${pageWant}`
-  const kw   = (inpKw?.value || '').trim()
-  const nim  = (inpNim?.value || '').trim()
-  const nama = (inpNama?.value || '').trim()
-  const fkid = selFak?.value || ''
-  const prid = selPro?.value || ''
+    if (role === 'SuperAdmin') {
+      const fkid = selFak?.value || ''
+      const prid = selPro?.value || ''
+      if (fkid) url += `&fakultas_id=${encodeURIComponent(fkid)}`
+      if (prid) url += `&prodi_id=${encodeURIComponent(prid)}`
+    } else {
+      url = roleDefaultFilter(url)
+    }
 
-  if (kw)   url += `&q=${encodeURIComponent(kw)}`
-  if (nim)  url += `&nim=${encodeURIComponent(nim)}`
-  // nama mahasiswa → kalau backend belum punya param khusus, masukkan ke q juga
-  if (nama) url += `&q=${encodeURIComponent(nama)}`
-  if (fkid) url += `&fakultas_id=${encodeURIComponent(fkid)}`
-  if (prid) url += `&prodi_id=${encodeURIComponent(prid)}`
-  url = applyScope(url)
+    const { data } = await api.get(url)
+    const rows = data.data || data
+    const meta = data.meta || {}
+    page = meta.current_page || pageWant
+    last = meta.last_page || page
 
-  const { data } = await api.get(url)
-  const rows = data.data || data
-  const meta = data.meta || {}
-  page = meta.current_page || pageWant
-  last = meta.last_page || page
+    if (!rows.length){ showMsg('Tidak ada data'); info.textContent='—'; return }
 
-  if (!rows.length){
-    body.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-4">Tidak ada data</td></tr>`
-    info.textContent = '—'
-    return
+    body.innerHTML = rows.map(r=>{
+      const fileUrl = normalizeFileUrl(r.file_url)
+      return `
+        <tr>
+          <td>${r.id}</td>
+          <td><code>${esc(r.nim || '-')}</code></td>
+          <td>${esc(getNama(r))}</td>
+          <td>${esc(getProdi(r))}</td>
+          <td>${esc(getFak(r))}</td>
+          <td>${esc(r.nama_kegiatan || '-')}</td>
+          <td class="d-flex flex-wrap gap-2">${renderActions({...r, file_url:fileUrl})}</td>
+        </tr>
+      `
+    }).join('')
+
+    info.textContent = meta.total ? `Hal. ${page}/${last} • ${meta.total} data` : `Hal. ${page}`
+  }catch(err){
+    if (isAuthError(err)) {
+      auth.clear()
+      window.location.replace(LOGIN_URL)
+      return
+    }
+    const st = err?.response?.status
+    showMsg(st===403 ? 'Anda tidak memiliki akses untuk melihat data ini.' : 'Gagal memuat data.')
   }
-
-  body.innerHTML = rows.map(r=>{
-    const fileUrl = normalizeFileUrl(r.file_url)
-    return `
-      <tr>
-        <td>${r.id}</td>
-        <td><code>${escapeHtml(r.nim || '-')}</code></td>
-        <td>${escapeHtml(getNama(r))}</td>
-        <td>${escapeHtml(getProdi(r))}</td>
-        <td>${escapeHtml(getFak(r))}</td>
-        <td>${escapeHtml(r.nama_kegiatan || '-')}</td>
-        <td class="d-flex flex-wrap gap-2">${renderActions({...r, file_url: fileUrl})}</td>
-      </tr>
-    `
-  }).join('')
-
-  info.textContent = meta.total ? `Hal. ${page}/${last} • ${meta.total} data` : `Hal. ${page}`
 }
 
-// ===== Events
+// events
 $('#kpCari')?.addEventListener('click', ()=>loadKP(1))
-inpKw?.addEventListener('keydown', e => { if(e.key==='Enter') loadKP(1) })
-inpNim?.addEventListener('keydown', e => { if(e.key==='Enter') loadKP(1) })
-inpNama?.addEventListener('keydown', e => { if(e.key==='Enter') loadKP(1) })
+inpKw?.addEventListener('keydown', e=>{ if(e.key==='Enter') loadKP(1) })
+inpNim?.addEventListener('keydown', e=>{ if(e.key==='Enter') loadKP(1) })
 $('#kpPrev')?.addEventListener('click', ()=>{ if(page>1) loadKP(page-1) })
 $('#kpNext')?.addEventListener('click', ()=>{ if(page<last) loadKP(page+1) })
 
-// hapus
+// hapus (SuperAdmin only)
 $('#kpBody')?.addEventListener('click', async (e)=>{
   const btn = e.target.closest('button[data-act="del"]')
   if(!btn) return
@@ -186,17 +206,27 @@ $('#kpBody')?.addEventListener('click', async (e)=>{
     await api.delete(`/kp/${id}`)
     await loadKP(page)
   }catch(err){
+    if (isAuthError(err)) {
+      auth.clear()
+      window.location.replace(LOGIN_URL)
+      return
+    }
     alert(err?.response?.data?.message || err.message)
   }
 })
 
+// boot
 ;(async function init(){
   try{
     await loadMe()
-    await loadMasters()
     await loadKP(1)
   }catch(err){
-    auth.clear()
-    window.location.replace(bridge?.dataset?.loginUrl || '/login')
+    if (isAuthError(err)) {
+      auth.clear()
+      window.location.replace(LOGIN_URL)
+    } else {
+      showMsg('Terjadi kesalahan saat inisialisasi halaman.')
+      console.error(err)
+    }
   }
 })()

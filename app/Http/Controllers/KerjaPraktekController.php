@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Http\Requests\KpStoreRequest;
 use App\Http\Requests\KpUpdateRequest;
 use App\Models\KerjaPraktek;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -17,20 +19,24 @@ class KerjaPraktekController extends Controller
     public function index(Request $req)
     {
         $perPage = (int) ($req->integer('per_page') ?: 25);
+        $user = $req->user();
 
-        $rows = KerjaPraktek::query()
-            // Eager load sudah di model ($with), tapi ini menyempitkan kolom agar hemat payload
+        $q = KerjaPraktek::query()
             ->with([
                 'mahasiswa:nim,nama_mahasiswa,id_prodi',
                 'mahasiswa.prodi:id,nama_prodi,id_fakultas',
                 'mahasiswa.prodi.fakultas:id,nama_fakultas',
             ])
             ->ofNim($req->string('nim'))
-            ->ofNama($req->string('nama'))                // filter nama mahasiswa
+            ->ofNama($req->string('nama'))
             ->ofProdi($req->integer('prodi_id'))
             ->ofFakultas($req->integer('fakultas_id'))
-            ->search($req->string('q'))                   // cari di kegiatan/nim/nama/prodi/fakultas
-            ->latest('id')
+            ->search($req->string('q'));
+
+        // Paksa scope sesuai role user (abaikan manipulasi filter dari client)
+        $this->applyScope($q, $user);
+
+        $rows = $q->latest('id')
             ->paginate($perPage)
             ->appends($req->query());
 
@@ -40,15 +46,42 @@ class KerjaPraktekController extends Controller
     /**
      * GET /api/kp/{id}
      */
-    public function show(int $id)
+    public function show(int $id, Request $req)
     {
+        $user = $req->user();
+
         $row = KerjaPraktek::with([
             'mahasiswa:nim,nama_mahasiswa,id_prodi',
             'mahasiswa.prodi:id,nama_prodi,id_fakultas',
             'mahasiswa.prodi.fakultas:id,nama_fakultas',
         ])->findOrFail($id);
 
+        $this->assertRowInScope($row, $user);
+
         return response()->json($row);
+    }
+
+    /**
+     * ➕ GET /api/mahasiswa/{nim}/kerja-praktek
+     * Shortcut by NIM untuk halaman detail SKPI.
+     */
+    public function indexByMahasiswa(string $nim, Request $req)
+    {
+        $user = $req->user();
+
+        $q = KerjaPraktek::query()
+            ->with([
+                'mahasiswa:nim,nama_mahasiswa,id_prodi',
+                'mahasiswa.prodi:id,nama_prodi,id_fakultas',
+                'mahasiswa.prodi.fakultas:id,nama_fakultas',
+            ])
+            ->ofNim($nim);
+
+        $this->applyScope($q, $user);
+
+        $rows = $q->orderBy('id', 'desc')->get();
+
+        return response()->json($rows);
     }
 
     /**
@@ -56,14 +89,19 @@ class KerjaPraktekController extends Controller
      */
     public function store(KpStoreRequest $req)
     {
+        $user = $req->user();
         $data = $req->validated();
+
+        // Pastikan NIM berada di dalam scope user
+        $this->assertNimInScope($data['nim'], $user);
 
         // simpan file
         $file = $req->file('file');
         $dir  = KerjaPraktek::dir();
 
         $safeSlug = Str::slug(substr($data['nama_kegiatan'], 0, 60), '-');
-        $filename = $data['nim'] . '_' . $safeSlug . '_' . Str::random(6) . '.' . $file->getClientOriginalExtension();
+        $ext = $file->getClientOriginalExtension();
+        $filename = $data['nim'] . '_' . $safeSlug . '_' . Str::random(6) . '.' . $ext;
 
         Storage::disk('public')->putFileAs($dir, $file, $filename);
 
@@ -73,14 +111,13 @@ class KerjaPraktekController extends Controller
             'file_sertifikat' => $filename,
         ]);
 
-        return response()->json(
-            $row->fresh()->load([
-                'mahasiswa:nim,nama_mahasiswa,id_prodi',
-                'mahasiswa.prodi:id,nama_prodi,id_fakultas',
-                'mahasiswa.prodi.fakultas:id,nama_fakultas',
-            ]),
-            201
-        );
+        $row = $row->fresh()->load([
+            'mahasiswa:nim,nama_mahasiswa,id_prodi',
+            'mahasiswa.prodi:id,nama_prodi,id_fakultas',
+            'mahasiswa.prodi.fakultas:id,nama_fakultas',
+        ]);
+
+        return response()->json($row, 201);
     }
 
     /**
@@ -88,8 +125,18 @@ class KerjaPraktekController extends Controller
      */
     public function update(KpUpdateRequest $req, int $id)
     {
+        $user = $req->user();
         $row = KerjaPraktek::findOrFail($id);
+
+        // Pastikan record ini dalam scope user
+        $this->assertRowInScope($row, $user);
+
         $data = $req->validated();
+
+        // Jika NIM diubah, pastikan tetap dalam scope
+        if (array_key_exists('nim', $data) && $data['nim'] !== $row->nim) {
+            $this->assertNimInScope($data['nim'], $user);
+        }
 
         if ($req->hasFile('file')) {
             $dir = KerjaPraktek::dir();
@@ -100,7 +147,10 @@ class KerjaPraktekController extends Controller
 
             $file = $req->file('file');
             $safeSlug = Str::slug(substr(($data['nama_kegiatan'] ?? $row->nama_kegiatan), 0, 60), '-');
-            $filename = ($data['nim'] ?? $row->nim) . '_' . $safeSlug . '_' . Str::random(6) . '.' . $file->getClientOriginalExtension();
+            $nimForName = ($data['nim'] ?? $row->nim);
+            $ext = $file->getClientOriginalExtension();
+            $filename = $nimForName . '_' . $safeSlug . '_' . Str::random(6) . '.' . $ext;
+
             Storage::disk('public')->putFileAs($dir, $file, $filename);
             $data['file_sertifikat'] = $filename;
         }
@@ -119,9 +169,14 @@ class KerjaPraktekController extends Controller
     /**
      * DELETE /api/kp/{id}
      */
-    public function destroy(int $id)
+    public function destroy(int $id, Request $req)
     {
+        $user = $req->user();
         $row = KerjaPraktek::findOrFail($id);
+
+        // Pastikan record ini dalam scope user
+        $this->assertRowInScope($row, $user);
+
         $dir = KerjaPraktek::dir();
 
         if ($row->file_sertifikat) {
@@ -136,9 +191,14 @@ class KerjaPraktekController extends Controller
     /**
      * (opsional) GET /api/kp/{id}/download
      */
-    public function download(int $id)
+    public function download(int $id, Request $req)
     {
+        $user = $req->user();
         $row = KerjaPraktek::findOrFail($id);
+
+        // Pastikan record ini dalam scope user
+        $this->assertRowInScope($row, $user);
+
         if (!$row->file_sertifikat) {
             return response()->json(['message' => 'File not found'], 404);
         }
@@ -153,5 +213,56 @@ class KerjaPraktekController extends Controller
         }
 
         return response()->download($disk->path($relPath), $row->file_sertifikat);
+    }
+
+    /* =========================
+       Helpers: Scope enforcement
+       ========================= */
+
+    /**
+     * Terapkan scope ke query berdasarkan role user.
+     */
+    private function applyScope(Builder $q, $user): void
+    {
+        if ($user->isProdiScoped()) {
+            $q->whereHas('mahasiswa', fn($mq) => $mq->where('id_prodi', $user->id_prodi));
+        } elseif ($user->isFacultyScoped()) {
+            $q->whereHas('mahasiswa.prodi', fn($p) => $p->where('id_fakultas', $user->id_fakultas));
+        }
+    }
+
+    /**
+     * Pastikan sebuah row berada dalam scope user.
+     */
+    private function assertRowInScope(KerjaPraktek $row, $user): void
+    {
+        if ($user->isProdiScoped()) {
+            // ambil id_prodi dari nim
+            $idp = DB::table('ref_mahasiswa')->where('nim', $row->nim)->value('id_prodi');
+            abort_unless($idp && (int)$idp === (int)$user->id_prodi, 403, 'Out of prodi scope');
+        } elseif ($user->isFacultyScoped()) {
+            $idf = DB::table('ref_mahasiswa as m')
+                ->join('ref_prodi as p', 'p.id', '=', 'm.id_prodi')
+                ->where('m.nim', $row->nim)
+                ->value('p.id_fakultas');
+            abort_unless($idf && (int)$idf === (int)$user->id_fakultas, 403, 'Out of faculty scope');
+        }
+    }
+
+    /**
+     * Pastikan NIM berada dalam scope user (untuk store/update).
+     */
+    private function assertNimInScope(string $nim, $user): void
+    {
+        if ($user->isProdiScoped()) {
+            $idp = DB::table('ref_mahasiswa')->where('nim', $nim)->value('id_prodi');
+            abort_unless($idp && (int)$idp === (int)$user->id_prodi, 403, 'Out of prodi scope');
+        } elseif ($user->isFacultyScoped()) {
+            $idf = DB::table('ref_mahasiswa as m')
+                ->join('ref_prodi as p', 'p.id', '=', 'm.id_prodi')
+                ->where('m.nim', $nim)
+                ->value('p.id_fakultas');
+            abort_unless($idf && (int)$idf === (int)$user->id_fakultas, 403, 'Out of faculty scope');
+        }
     }
 }

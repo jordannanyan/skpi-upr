@@ -8,39 +8,45 @@
 @endpush
 
 @section('content')
+<div id="bridge" data-admin-url="{{ url('/admin') }}" data-login-url="{{ url('/login') }}"></div>
+
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
     <div class="row g-2 align-items-end">
-      <div class="col-md-3">
+      <div class="col-md-4">
         <label class="form-label small text-muted">Cari (kegiatan/keyword)</label>
         <input type="text" id="kpKw" class="form-control" placeholder="mis. Magang / Seminar">
       </div>
-      <div class="col-md-2">
+      <div class="col-md-3">
         <label class="form-label small text-muted">Filter NIM</label>
         <input type="text" id="kpNim" class="form-control" placeholder="mis. 22xx">
       </div>
-      <div class="col-md-3">
-        <label class="form-label small text-muted">Nama Mahasiswa</label>
-        <input type="text" id="kpNama" class="form-control" placeholder="mis. Siti / Budi">
+
+      {{-- Khusus SuperAdmin: Fakultas & Prodi --}}
+      <div id="roleFilters" class="d-none">
+        <div class="row g-2">
+          <div class="col-md-3">
+            <label class="form-label small text-muted">Fakultas</label>
+            <select id="kpFak" class="form-select">
+              <option value="">— Semua —</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">Prodi</label>
+            <select id="kpProdi" class="form-select">
+              <option value="">— Semua —</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div class="col-md-2">
-        <label class="form-label small text-muted">Fakultas</label>
-        <select id="kpFak" class="form-select">
-          <option value="">— Semua —</option>
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small text-muted">Prodi</label>
-        <select id="kpProdi" class="form-select">
-          <option value="">— Semua —</option>
-        </select>
-      </div>
-      <div class="col-12 col-md-2 d-grid">
-        <button class="btn btn-outline-secondary" id="kpCari">Terapkan</button>
+
+      <div class="col-md-2 d-grid mt-2 mt-md-0">
+        <button class="btn btn-outline-secondary mt-2" id="kpCari">Terapkan</button>
       </div>
     </div>
   </div>
 </div>
+
 {{-- Toolbar Aksi (Tambah KP) --}}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div></div>
@@ -59,7 +65,7 @@
         <th>Prodi</th>
         <th>Fakultas</th>
         <th>Nama Kegiatan</th>
-        <th style="width:220px;">Aksi</th>
+        <th>Aksi</th>
       </tr>
     </thead>
     <tbody id="kpBody">

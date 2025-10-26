@@ -3,169 +3,199 @@ import { api } from '../../../services/api'
 import { auth } from '../../../services/auth'
 
 const $ = s => document.querySelector(s)
+const esc = s => String(s ?? '').replace(/[&<>"']/g, m => (
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]
+))
+const isAuthError = err => [401,419].includes(err?.response?.status)
 
 let me = null
 let role = 'AdminJurusan'
-const bridge = document.getElementById('bridge')
+const bridge  = document.getElementById('bridge')
+const ADMIN_URL = bridge?.dataset?.adminUrl || '/admin'
+const LOGIN_URL = bridge?.dataset?.loginUrl || '/login'
 
 // elements
-const body = $('#sfBody')
-const inpKw = $('#sfKw')
+const body   = $('#sfBody')
+const inpKw  = $('#sfKw')
 const inpNim = $('#sfNim')
 const inpKat = $('#sfKat')
 const selFak = $('#sfFak')
 const selPro = $('#sfProdi')
+const roleBox= $('#roleFilters')
 
-const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, m => ({
-  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-}[m]))
-
-// ==== Ambil nama/prodi/fakultas dari payload (akomodasi berbagai bentuk) ====
+// helpers
 const getNama = r => r?.nama_mhs ?? r?.mhs?.nama_mahasiswa ?? r?.mahasiswa?.nama_mahasiswa ?? '-'
-const getProdi = r => r?.nama_prodi ?? r?.prodi?.nama_prodi ?? r?.mhs?.prodi?.nama_prodi ?? r?.mahasiswa?.prodi?.nama_prodi ?? '-'
-const getFak   = r => r?.nama_fakultas ?? r?.prodi?.fakultas?.nama_fakultas ?? r?.mhs?.prodi?.fakultas?.nama_fakultas ?? r?.mahasiswa?.prodi?.fakultas?.nama_fakultas ?? '-'
-
-// ==== Perbaiki URL download agar sesuai origin (termasuk :8000) ====
-function normalizeFileUrl(u) {
+const getProdi= r => r?.nama_prodi ?? r?.prodi?.nama_prodi ?? r?.mhs?.prodi?.nama_prodi ?? r?.mahasiswa?.prodi?.nama_prodi ?? '-'
+const getFak  = r => r?.nama_fakultas ?? r?.prodi?.fakultas?.nama_fakultas ?? r?.mhs?.prodi?.fakultas?.nama_fakultas ?? r?.mahasiswa?.prodi?.nama_fakultas ?? '-'
+function normalizeFileUrl(u){
   if (!u) return null
-  try {
-    if (u.startsWith('/')) return u // relative path ok
+  try{
+    if (u.startsWith('/')) return u
     const parsed = new URL(u, window.location.origin)
     parsed.protocol = window.location.protocol
-    parsed.host = window.location.host
+    parsed.host     = window.location.host
     return parsed.toString()
-  } catch {
+  }catch{
     const m = u.match(/^https?:\/\/[^/]+(\/.*)$/i)
     return m ? m[1] : u
   }
 }
+function showMsg(msg){ body.innerHTML = `<tr><td colspan="8" class="text-center text-muted p-4">${esc(msg)}</td></tr>` }
 
 function renderActions(r){
-  const linkEdit = `<a class="btn btn-sm btn-outline-primary" href="/admin/sertifikasi/${r.id}/edit">Edit</a>`
-  const fileUrl = normalizeFileUrl(r.file_url)
-  const dl = fileUrl
-    ? `<a class="btn btn-sm btn-outline-secondary" target="_blank" href="${fileUrl}">Download</a>`
-    : ''
-  const canDelete = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
-  const del = canDelete
-    ? `<button class="btn btn-sm btn-outline-danger" data-act="del" data-id="${r.id}">Hapus</button>`
-    : ''
-  return [linkEdit, dl, del].filter(Boolean).join(' ')
+  const edit = `
+    <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
+       href="${ADMIN_URL}/sertifikasi/${r.id}/edit"
+       title="Edit Sertifikasi" aria-label="Edit">
+      <i class="bi bi-pencil-square"></i>
+    </a>`
+
+  const dl = r.file_url ? `
+    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center"
+       target="_blank" href="${esc(r.file_url)}"
+       title="Download Berkas" aria-label="Download">
+      <i class="bi bi-download"></i>
+    </a>` : ''
+
+  const del = (role === 'SuperAdmin') ? `
+    <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
+            data-act="del" data-id="${r.id}"
+            title="Hapus Sertifikasi" aria-label="Hapus">
+      <i class="bi bi-trash"></i>
+    </button>` : ''
+
+  return [edit, dl, del].filter(Boolean).join(' ')
 }
 
-async function loadMe(){
-  const { data } = await api.get('/me')
-  me = data
-  role = data.role
-  const canCreate = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
-  if (!canCreate) $('#btnGoCreate')?.classList.add('d-none')
-}
 
-function applyScope(url){
-  if (role === 'AdminJurusan' || role === 'Kajur') {
-    if (me?.id_prodi) url += `&prodi_id=${me.id_prodi}`
+// scoping url untuk non-superadmin
+function roleDefaultFilter(url){
+  if ((role==='AdminJurusan' || role==='Kajur') && me?.id_prodi) {
+    url += `&prodi_id=${encodeURIComponent(me.id_prodi)}`
   }
-  if (['AdminFakultas','Wakadek','Dekan'].includes(role)) {
-    if (me?.id_fakultas) url += `&fakultas_id=${me.id_fakultas}`
+  if (['AdminFakultas','Wakadek','Dekan'].includes(role) && me?.id_fakultas) {
+    url += `&fakultas_id=${encodeURIComponent(me.id_fakultas)}`
   }
   return url
 }
 
-// ==== Masters (Fakultas & Prodi) ====
-async function loadMasters(){
-  const [f,p] = await Promise.all([
-    api.get('/fakultas?per_page=100'),
-    api.get('/prodi?per_page=200'),
-  ])
-  const faks = f.data.data || f.data
-  const pros = p.data.data || p.data
+async function loadMe(){
+  const { data } = await api.get('/me')
+  me = data; role = data.role
 
-  selFak.innerHTML = `<option value="">— Semua —</option>`
-  faks.forEach(x=>{
-    const opt = document.createElement('option')
-    opt.value = x.id
-    opt.textContent = x.nama_fakultas || `Fakultas ${x.id}`
-    selFak.appendChild(opt)
-  })
+  // tombol tambah
+  const canCreate = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
+  if (!canCreate) $('#btnGoCreate')?.classList.add('d-none')
 
-  selPro.innerHTML = `<option value="">— Semua —</option>`
-  pros.forEach(x=>{
-    const opt = document.createElement('option')
-    opt.value = x.id
-    opt.textContent = x.nama_prodi || `Prodi ${x.id}`
-    opt.dataset.fak = x.id_fakultas || ''
-    selPro.appendChild(opt)
-  })
-
-  const filterProdiByFak = ()=>{
-    const v = selFak.value
-    ;[...selPro.options].forEach((o,i)=>{
-      if (i===0) return
-      o.hidden = (v && (o.dataset.fak || '') !== v)
-    })
-    if (v) {
-      const cur = selPro.selectedOptions[0]
-      if (cur && (cur.dataset.fak||'') !== v) selPro.value = ''
-    }
+  // dropdown Fak/Pro hanya SuperAdmin
+  if (role === 'SuperAdmin') {
+    roleBox?.classList.remove('d-none')
+    await loadMasters()
+  } else {
+    roleBox?.classList.add('d-none')
   }
-  selFak.addEventListener('change', filterProdiByFak)
-  filterProdiByFak()
+}
+
+async function loadMasters(){
+  try{
+    const [f,p] = await Promise.all([
+      api.get('/fakultas?per_page=100'),
+      api.get('/prodi?per_page=200'),
+    ])
+    const faks = f.data.data || f.data
+    const pros = p.data.data || p.data
+
+    selFak.innerHTML = `<option value="">— Semua —</option>`
+    faks.forEach(x=>{
+      const o = document.createElement('option')
+      o.value = x.id
+      o.textContent = x.nama_fakultas || `Fakultas ${x.id}`
+      selFak.appendChild(o)
+    })
+
+    selPro.innerHTML = `<option value="">— Semua —</option>`
+    pros.forEach(x=>{
+      const o = document.createElement('option')
+      o.value = x.id
+      o.textContent = x.nama_prodi || `Prodi ${x.id}`
+      o.dataset.fak = x.id_fakultas || ''
+      selPro.appendChild(o)
+    })
+
+    selFak.addEventListener('change', ()=>{
+      const v = selFak.value
+      ;[...selPro.options].forEach((o,i)=>{
+        if (i===0) return
+        o.hidden = (v && (o.dataset.fak || '') !== v)
+      })
+      const cur = selPro.selectedOptions[0]
+      if (v && cur && (cur.dataset.fak||'') !== v) selPro.value = ''
+    })
+  }catch(err){
+    if (isAuthError(err)) throw err
+    alert(err?.response?.data?.message || err.message || 'Gagal memuat master data')
+  }
 }
 
 async function loadSertif(){
-  body.innerHTML = `<tr><td colspan="8" class="text-center text-muted p-4">Memuat…</td></tr>`
+  showMsg('Memuat…')
+  try{
+    let url = '/sertifikasi?per_page=30'
+    const kw  = (inpKw?.value || '').trim()
+    const nim = (inpNim?.value || '').trim()
+    const kat = (inpKat?.value || '').trim()
 
-  let url = '/sertifikasi?per_page=30'
-  const kw  = inpKw?.value?.trim()
-  const nim = inpNim?.value?.trim()
-  const kat = inpKat?.value?.trim()
-  const fkid = selFak?.value || ''
-  const prid = selPro?.value || ''
+    if (kw)  url += `&q=${encodeURIComponent(kw)}`
+    if (nim) url += `&nim=${encodeURIComponent(nim)}`
+    if (kat) url += `&kategori=${encodeURIComponent(kat)}`
 
-  if (kw)  url += '&q=' + encodeURIComponent(kw)
-  if (nim) url += '&nim=' + encodeURIComponent(nim)
-  if (kat) url += '&kategori=' + encodeURIComponent(kat)
-  if (fkid) url += '&fakultas_id=' + encodeURIComponent(fkid)
-  if (prid) url += '&prodi_id=' + encodeURIComponent(prid)
-  url = applyScope(url)
+    if (role === 'SuperAdmin') {
+      const fkid = selFak?.value || ''
+      const prid = selPro?.value || ''
+      if (fkid) url += `&fakultas_id=${encodeURIComponent(fkid)}`
+      if (prid) url += `&prodi_id=${encodeURIComponent(prid)}`
+    } else {
+      url = roleDefaultFilter(url)
+    }
 
-  const { data } = await api.get(url)
-  const rows = data.data || data
+    const { data } = await api.get(url)
+    const rows = data.data || data
 
-  if (!rows.length){
-    body.innerHTML = `<tr><td colspan="8" class="text-center text-muted p-4">Tidak ada data</td></tr>`
-    return
+    if (!rows.length){ showMsg('Tidak ada data'); return }
+
+    body.innerHTML = rows.map(r=>{
+      const fileUrl = normalizeFileUrl(r.file_url)
+      return `
+        <tr>
+          <td>${r.id}</td>
+          <td><code>${esc(r.nim || '-')}</code></td>
+          <td>${esc(getNama(r))}</td>
+          <td>${esc(getProdi(r))}</td>
+          <td>${esc(getFak(r))}</td>
+          <td>${esc(r.kategori_sertifikasi ?? r.kategori ?? '-')}</td>
+          <td>${esc(r.nama_sertifikasi ?? r.nama ?? '-')}</td>
+          <td class="d-flex flex-wrap gap-2">${renderActions({...r, file_url:fileUrl})}</td>
+        </tr>
+      `
+    }).join('')
+  }catch(err){
+    if (isAuthError(err)) {
+      auth.clear()
+      window.location.replace(LOGIN_URL)
+      return
+    }
+    const st = err?.response?.status
+    showMsg(st===403 ? 'Anda tidak memiliki akses untuk melihat data ini.' : 'Gagal memuat data.')
   }
-
-  body.innerHTML = rows.map(r=>{
-    const nama = escapeHtml(getNama(r))
-    const prodi = escapeHtml(getProdi(r))
-    const fak = escapeHtml(getFak(r))
-    const katv = escapeHtml(r.kategori_sertifikasi ?? r.kategori ?? '-')
-    const nm = escapeHtml(r.nama_sertifikasi ?? r.nama ?? '-')
-    const fileUrl = normalizeFileUrl(r.file_url)
-
-    return `
-      <tr>
-        <td>${r.id}</td>
-        <td><code>${escapeHtml(r.nim || '-')}</code></td>
-        <td>${nama}</td>
-        <td>${prodi}</td>
-        <td>${fak}</td>
-        <td>${katv}</td>
-        <td>${nm}</td>
-        <td class="d-flex flex-wrap gap-2">${renderActions({...r, file_url: fileUrl})}</td>
-      </tr>
-    `
-  }).join('')
 }
 
+// events
 $('#sfCari')?.addEventListener('click', loadSertif)
 inpKw?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
 inpNim?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
 inpKat?.addEventListener('keydown', e => { if(e.key==='Enter') loadSertif() })
 
-// hapus
+// hapus (SuperAdmin only)
 $('#sfBody')?.addEventListener('click', async (e)=>{
   const btn = e.target.closest('button[data-act="del"]')
   if(!btn) return
@@ -175,17 +205,27 @@ $('#sfBody')?.addEventListener('click', async (e)=>{
     await api.delete(`/sertifikasi/${id}`)
     await loadSertif()
   }catch(err){
+    if (isAuthError(err)) {
+      auth.clear()
+      window.location.replace(LOGIN_URL)
+      return
+    }
     alert(err?.response?.data?.message || err.message)
   }
 })
 
+// boot
 ;(async function init(){
   try{
     await loadMe()
-    await loadMasters()
     await loadSertif()
   }catch(err){
-    auth.clear()
-    window.location.replace(bridge?.dataset?.loginUrl || '/login')
+    if (isAuthError(err)) {
+      auth.clear()
+      window.location.replace(LOGIN_URL)
+    } else {
+      showMsg('Terjadi kesalahan saat inisialisasi halaman.')
+      console.error(err)
+    }
   }
 })()

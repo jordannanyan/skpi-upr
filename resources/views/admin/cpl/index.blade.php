@@ -8,28 +8,37 @@
 @endpush
 
 @section('content')
+<div id="bridge" data-admin-url="{{ url('/admin') }}" data-login-url="{{ url('/login') }}"></div>
+
 {{-- Filter --}}
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
     <div class="row g-2 align-items-end">
-      <div class="col-md-4">
+      <div class="col-md-6">
         <label class="form-label small text-muted">Cari (kode/kategori/deskripsi/prodi/fakultas)</label>
-        <input type="text" id="q" class="form-control" placeholder="mis. CPL01 / Sikap / Kedokteran">
+        <input type="text" id="q" class="form-control" placeholder="mis. CPL01 / Sikap / Informatika">
       </div>
-      <div class="col-md-4">
-        <label class="form-label small text-muted">Fakultas</label>
-        <select id="cplFak" class="form-select">
-          <option value="">— Semua —</option>
-        </select>
+
+      {{-- Khusus SuperAdmin: Fakultas & Prodi --}}
+      <div id="roleFilters" class="d-none">
+        <div class="row g-2 mt-2">
+          <div class="col-md-4">
+            <label class="form-label small text-muted">Fakultas</label>
+            <select id="cplFak" class="form-select">
+              <option value="">— Semua —</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small text-muted">Prodi</label>
+            <select id="cplProdi" class="form-select">
+              <option value="">— Semua —</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div class="col-md-3">
-        <label class="form-label small text-muted">Prodi</label>
-        <select id="cplProdi" class="form-select">
-          <option value="">— Semua —</option>
-        </select>
-      </div>
-      <div class="col-md-1 d-grid">
-        <button class="btn btn-outline-secondary" id="btnCari">Terapkan</button>
+
+      <div class="col-md-2 d-grid mt-2 mt-md-0">
+        <button class="btn btn-outline-secondary mt-2" id="btnCari">Terapkan</button>
       </div>
     </div>
   </div>
@@ -47,16 +56,16 @@
   <table class="table table-hover align-middle">
     <thead class="table-light">
       <tr>
-        <th style="width:130px;">Kode</th>
-        <th style="width:160px;">Kategori</th>
-        <th style="width:220px;">Prodi</th>
-        <th style="width:220px;">Fakultas</th>
+        <th>Kode</th>
+        <th>Kategori</th>
+        <th>Prodi</th>
+        <th>Fakultas</th>
         <th>Deskripsi</th>
         <th>Aksi</th>
       </tr>
     </thead>
     <tbody id="cplBody">
-      <tr><td colspan="7" class="text-center text-muted p-4">Memuat…</td></tr>
+      <tr><td colspan="6" class="text-center text-muted p-4">Memuat…</td></tr>
     </tbody>
   </table>
 </div>

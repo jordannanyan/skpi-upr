@@ -8,36 +8,45 @@
 @endpush
 
 @section('content')
+<div id="bridge" data-admin-url="{{ url('/admin') }}" data-login-url="{{ url('/login') }}"></div>
+
 {{-- Filter --}}
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
     <div class="row g-2 align-items-end">
-      <div class="col-md-3">
+      <div class="col-md-4">
         <label class="form-label small text-muted">Cari (nama sertifikasi / kata kunci)</label>
         <input type="text" id="sfKw" class="form-control" placeholder="mis. Oracle / TOEFL">
       </div>
-      <div class="col-md-2">
+      <div class="col-md-3">
         <label class="form-label small text-muted">Filter NIM</label>
         <input type="text" id="sfNim" class="form-control" placeholder="mis. 22xx">
       </div>
-      <div class="col-md-2">
+      <div class="col-md-3">
         <label class="form-label small text-muted">Kategori</label>
         <input type="text" id="sfKat" class="form-control" placeholder="mis. Bahasa / Vendor">
       </div>
-      <div class="col-md-3">
-        <label class="form-label small text-muted">Fakultas</label>
-        <select id="sfFak" class="form-select">
-          <option value="">— Semua —</option>
-        </select>
+
+      {{-- Khusus SuperAdmin: Fakultas & Prodi --}}
+      <div id="roleFilters" class="d-none mt-2">
+        <div class="row g-2">
+          <div class="col-md-3">
+            <label class="form-label small text-muted">Fakultas</label>
+            <select id="sfFak" class="form-select">
+              <option value="">— Semua —</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">Prodi</label>
+            <select id="sfProdi" class="form-select">
+              <option value="">— Semua —</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div class="col-md-2">
-        <label class="form-label small text-muted">Prodi</label>
-        <select id="sfProdi" class="form-select">
-          <option value="">— Semua —</option>
-        </select>
-      </div>
-      <div class="col-12 col-md-2 d-grid">
-        <button class="btn btn-outline-secondary" id="sfCari">Terapkan</button>
+
+      <div class="col-md-2 d-grid mt-2 mt-md-0">
+        <button class="btn btn-outline-secondary mt-2" id="sfCari">Terapkan</button>
       </div>
     </div>
   </div>
@@ -60,8 +69,8 @@
         <th>Nama</th>
         <th>Prodi</th>
         <th>Fakultas</th>
-        <th style="width:160px;">Kategori</th>
-        <th style="width:160px;">Nama Sertifikasi</th>
+        <th>Kategori</th>
+        <th >Nama Sertifikasi</th>
         <th>Aksi</th>
       </tr>
     </thead>

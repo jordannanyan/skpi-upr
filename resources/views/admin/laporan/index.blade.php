@@ -37,7 +37,7 @@
           <th>Prodi</th>
           <th>Fakultas</th>
           <th style="width:140px;">Status</th>
-          <th >No/Tgl Pengesahan</th>
+          <th>No/Tgl Pengesahan</th>
           <th>Catatan</th>
           <th>File / Aksi</th>
         </tr>
@@ -45,7 +45,7 @@
 
       <tbody id="lapBody">
         <tr>
-          <td colspan="6" class="text-center text-muted p-4">Memuat…</td>
+          <td colspan="9" class="text-center text-muted p-4">Memuat…</td>
         </tr>
       </tbody>
     </table>

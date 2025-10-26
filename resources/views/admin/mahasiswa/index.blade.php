@@ -24,7 +24,7 @@
         </select>
       </div>
       <div class="col-md-2 d-grid">
-        <button class="btn btn-outline-secondary" id="mhsCari">Terapkan</button>
+        <button class="btn btn-outline-secondary mt-2" id="mhsCari">Terapkan</button>
       </div>
     </div>
   </div>
