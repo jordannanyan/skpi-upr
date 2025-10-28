@@ -8,6 +8,8 @@
 @endpush
 
 @section('content')
+<div id="bridge" data-admin-url="{{ url('/admin') }}" data-login-url="{{ url('/login') }}"></div>
+
 <div class="card border-0 shadow-sm">
   <div class="card-body">
     <div class="row g-3">
@@ -27,18 +29,23 @@
         </select>
       </div>
 
-      <div class="col-md-3">
-        <label class="form-label small text-muted">Fakultas</label>
-        <select id="selFak" class="form-select">
-          <option value="">— Pilih Fakultas —</option>
-        </select>
-      </div>
+      {{-- Blok master Fak/Prodi (disembunyikan untuk AdminJurusan/Kajur oleh JS) --}}
+      <div id="rowMasters" class="col-12">
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label small text-muted">Fakultas</label>
+            <select id="selFak" class="form-select">
+              <option value="">— Pilih Fakultas —</option>
+            </select>
+          </div>
 
-      <div class="col-md-2">
-        <label class="form-label small text-muted">Prodi</label>
-        <select id="selProdi" class="form-select" disabled>
-          <option value="">— Pilih Prodi —</option>
-        </select>
+          <div class="col-md-2">
+            <label class="form-label small text-muted">Prodi</label>
+            <select id="selProdi" class="form-select" disabled>
+              <option value="">— Pilih Prodi —</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div class="col-md-12">

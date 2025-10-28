@@ -1,3 +1,4 @@
+// resources/js/admin/pages/cpl/index.js
 import { api } from '../../../services/api'
 import { auth } from '../../../services/auth'
 
@@ -9,6 +10,7 @@ const isAuthError = err => [401,419].includes(err?.response?.status)
 
 let me = null
 let role = null
+let myProdiId = null
 
 const bridge   = document.getElementById('bridge')
 const LOGIN_URL= bridge?.dataset?.loginUrl || '/login'
@@ -18,16 +20,31 @@ const roleBox = $('#roleFilters')
 const selFak  = $('#cplFak')
 const selPro  = $('#cplProdi')
 const body    = $('#cplBody')
+const btnCreate = $('#btnGoCreate')
 
+// ---- util baris: ambil id_prodi baris secara defensif ----
+const getRowProdiId = (r) =>
+  r?.id_prodi ??
+  r?.prodi?.id ??
+  r?.prodi_id ??
+  null
+
+// ---- tombol aksi per baris berdasar role & scope ----
 function actions(row){
+  const rowProdiId = getRowProdiId(row)
+  const inMyProdi  = (myProdiId && rowProdiId) ? Number(rowProdiId) === Number(myProdiId) : false
+
+  const canEdit   = (role === 'SuperAdmin') || ((role === 'AdminJurusan' || role === 'Kajur') && inMyProdi)
+  const canDelete = (role === 'SuperAdmin') || ((role === 'AdminJurusan' || role === 'Kajur') && inMyProdi)
+
   const hrefEdit = `${ADMIN_URL}/cpl/${encodeURIComponent(row.kode_cpl)}/edit`
   const hrefSkor = `${ADMIN_URL}/cpl/${encodeURIComponent(row.kode_cpl)}/skor`
 
-  const edit = `
+  const edit = canEdit ? `
     <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
        href="${hrefEdit}" title="Edit CPL" aria-label="Edit">
       <i class="bi bi-pencil-square"></i>
-    </a>`
+    </a>` : ''
 
   const skor = `
     <a class="btn btn-sm btn-outline-dark d-inline-flex align-items-center justify-content-center"
@@ -35,37 +52,36 @@ function actions(row){
       <i class="bi bi-bar-chart-line"></i>
     </a>`
 
-  const del = (role === 'SuperAdmin')
-    ? `
+  const del = canDelete ? `
     <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
             data-act="del" data-kode="${row.kode_cpl}"
             title="Hapus CPL" aria-label="Hapus">
       <i class="bi bi-trash"></i>
-    </button>`
-    : ''
+    </button>` : ''
 
   return [edit, skor, del].filter(Boolean).join(' ')
 }
-
 
 async function loadMe(){
   try{
     const { data } = await api.get('/me')
     me = data
     role = data?.role || localStorage.getItem('auth_role') || null
+    myProdiId = data?.id_prodi ?? data?.prodi?.id ?? null
   }catch(err){
     if (isAuthError(err)) {
       auth.clear()
       return window.location.replace(LOGIN_URL)
     }
     role = localStorage.getItem('auth_role') || null
+    myProdiId = Number(localStorage.getItem('auth_id_prodi') || 0) || null
     console.warn('Gagal memuat /me:', err?.response?.data || err.message)
   }
 
-  // Create/Delete hanya SuperAdmin
-  if (role !== 'SuperAdmin') {
-    $('#btnGoCreate')?.classList.add('d-none')
-  }
+  // Create: SuperAdmin + Prodi (AdminJurusan/Kajur)
+  const canCreate = ['SuperAdmin','AdminJurusan','Kajur'].includes(role)
+  if (!canCreate) btnCreate?.classList.add('d-none')
+  else            btnCreate?.classList.remove('d-none')
 
   // Filter Fak/Pro hanya SuperAdmin
   if (role === 'SuperAdmin') {
@@ -183,7 +199,7 @@ async function loadList(){
 $('#btnCari')?.addEventListener('click', loadList)
 $('#q')?.addEventListener('keydown', e=>{ if(e.key==='Enter') loadList() })
 
-// delete (SuperAdmin only)
+// delete: SuperAdmin, AdminJurusan, Kajur (FE), backend tetap cek scope
 $('#cplBody')?.addEventListener('click', async (e)=>{
   const btn = e.target.closest('button[data-act="del"]')
   if (!btn) return
