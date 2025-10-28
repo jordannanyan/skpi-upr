@@ -2,49 +2,47 @@
 import { api } from '../../../services/api'
 import { auth } from '../../../services/auth'
 
+// ========== Utils ==========
 const $  = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
-const isAuthError = err => [401,419].includes(err?.response?.status)
+const isAuthError = (err) => [401,419].includes(err?.response?.status)
+const isLikelyNim = (v) => /^[0-9]{6,20}$/.test(String(v || '').trim())
 
-const bridge   = document.getElementById('bridge')
-const ADMIN_URL= bridge?.dataset?.adminUrl || '/admin'
-const LOGIN_URL= bridge?.dataset?.loginUrl || '/login'
-const COLS     = (() => document.querySelectorAll('table thead th').length || 7)()
+// Bridge
+const bridge     = document.getElementById('bridge')
+const ADMIN_URL  = bridge?.dataset?.adminUrl || '/admin'
+const LOGIN_URL  = bridge?.dataset?.loginUrl || '/login'
 
-// elements
-const body    = $('#kpBody')
-const info    = $('#kpInfo')
-const inpKw   = $('#kpKw')
-const inpNim  = $('#kpNim')
-const selFak  = $('#kpFak')
-const selPro  = $('#kpProdi')
-const roleBox = $('#roleFilters')
+// Elemen
+const filterCard = document.querySelector('.card.border-0.shadow-sm.mb-3')
+const body       = $('#kpBody')
+const info       = $('#kpInfo')
+const inpKw      = $('#kpKw')
+const inpNim     = $('#kpNim')
+const selFak     = $('#kpFak')
+const selPro     = $('#kpProdi')
+const roleBox    = $('#roleFilters')
+const btnCreate  = $('#btnGoCreate')
+const btnPrev    = $('#kpPrev')
+const btnNext    = $('#kpNext')
 
-let me=null, role='AdminJurusan'
-let page=1, last=1
+// Kolom
+const COLS       = (() => document.querySelectorAll('table thead th').length || 7)()
 
-// helpers
+// State
+let me = null, role = 'AdminJurusan', myNim = null
+let page = 1, last = 1
+
+// ===== Helpers =====
 const getNama = r => r?.nama_mhs ?? r?.mhs?.nama_mahasiswa ?? r?.mahasiswa?.nama_mahasiswa ?? '-'
 const getProdi= r => r?.nama_prodi ?? r?.prodi?.nama_prodi ?? r?.mhs?.prodi?.nama_prodi ?? r?.mahasiswa?.prodi?.nama_prodi ?? '-'
 const getFak  = r => r?.nama_fakultas ?? r?.prodi?.fakultas?.nama_fakultas ?? r?.mhs?.prodi?.fakultas?.nama_fakultas ?? r?.mahasiswa?.prodi?.fakultas?.nama_fakultas ?? '-'
-const normalizeFileUrl = (u)=>{
-  if (!u) return null
-  try {
-    if (u.startsWith('/')) return u
-    const parsed = new URL(u, window.location.origin)
-    parsed.protocol = window.location.protocol
-    parsed.host     = window.location.host
-    return parsed.toString()
-  } catch {
-    const m = u.match(/^https?:\/\/[^/]+(\/.*)$/i)
-    return m ? m[1] : u
-  }
-}
+
 function showMsg(msg){ body.innerHTML = `<tr><td colspan="${COLS}" class="text-center text-muted p-4">${esc(msg)}</td></tr>` }
 
-// scoping tanpa menampilkan dropdown utk non-SuperAdmin
+// Staff scoping via prodi/fakultas
 function roleDefaultFilter(url){
-  if ((role==='AdminJurusan' || role==='Kajur') && me?.id_prodi) {
+  if ((role==='AdminJurusan'||role==='Kajur') && me?.id_prodi) {
     url += `&prodi_id=${encodeURIComponent(me.id_prodi)}`
   }
   if (['AdminFakultas','Wakadek','Dekan'].includes(role) && me?.id_fakultas) {
@@ -54,44 +52,88 @@ function roleDefaultFilter(url){
 }
 
 function renderActions(r){
-  const edit = `
-    <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
-       href="${ADMIN_URL}/kp/${r.id}/edit"
-       title="Edit KP" aria-label="Edit">
-      <i class="bi bi-pencil-square"></i>
-    </a>`
+  // Mahasiswa: hanya boleh HAPUS baris miliknya sendiri
+  if (role === 'Mahasiswa') {
+    const isOwn = String(r.nim || '') === String(myNim || '')
+    return isOwn ? `
+      <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
+              data-act="del" data-id="${r.id}" title="Hapus KP" aria-label="Hapus">
+        <i class="bi bi-trash"></i>
+      </button>
+    ` : '' // baris milik orang lain: tanpa aksi
+  }
 
-  const dl = r.file_url ? `
-    <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center"
-       target="_blank" href="${esc(r.file_url)}"
-       title="Download Berkas" aria-label="Download">
-      <i class="bi bi-download"></i>
+  // Staf: tetap seperti sebelumnya
+  const canEdit = role === 'SuperAdmin' || role === 'AdminJurusan' || role === 'Kajur'
+  const btnEdit = canEdit ? `
+    <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
+       href="${ADMIN_URL}/kp/${r.id}/edit" title="Edit KP" aria-label="Edit">
+      <i class="bi bi-pencil-square"></i>
     </a>` : ''
 
-  const del = (role === 'SuperAdmin') ? `
+  const btnDel  = role === 'SuperAdmin' ? `
     <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
-            data-act="del" data-id="${r.id}"
-            title="Hapus KP" aria-label="Hapus">
+            data-act="del" data-id="${r.id}" title="Hapus KP" aria-label="Hapus">
       <i class="bi bi-trash"></i>
     </button>` : ''
 
-  return [edit, dl, del].filter(Boolean).join(' ')
+  return [btnEdit, btnDel].filter(Boolean).join(' ')
 }
 
 
+
+function renderRows(rows){
+  body.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.id}</td>
+      <td><code>${esc(r.nim || '-')}</code></td>
+      <td>${esc(getNama(r))}</td>
+      <td>${esc(getProdi(r))}</td>
+      <td>${esc(getFak(r))}</td>
+      <td>${esc(r.nama_kegiatan || '-')}</td>
+      <td class="d-flex flex-wrap gap-2">${renderActions(r)}</td>
+    </tr>
+  `).join('')
+}
+
+// ===== Boot =====
 async function loadMe(){
   const { data } = await api.get('/me')
   me = data; role = data.role
-  // tombol tambah hanya untuk peran tertentu
-  const canCreate = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
-  if (!canCreate) $('#btnGoCreate')?.classList.add('d-none')
 
-  // Dropdown Fakultas/Prodi hanya untuk SuperAdmin
-  if (role === 'SuperAdmin') {
-    roleBox?.classList.remove('d-none')
-    await loadMasters()
+  // Tentukan NIM paling akurat
+  const nimFromMe = data?.nim ?? data?.mahasiswa?.nim ?? (isLikelyNim(data?.username) ? data.username : '') ?? ''
+  myNim = nimFromMe || localStorage.getItem('auth_nim') || ''
+
+  if (role === 'Mahasiswa') {
+    // 1) Sembunyikan seluruh kartu filter
+    filterCard?.classList.add('d-none')
+
+    // 2) Sembunyikan pagination prev/next
+    btnPrev?.classList.add('d-none')
+    btnNext?.classList.add('d-none')
+
+    // 3) Lock input NIM (kalau masih ada di DOM)
+    if (inpNim) {
+      inpNim.value = myNim || ''
+      inpNim.readOnly = true
+      inpNim.classList.add('bg-light')
+      inpNim.placeholder = 'NIM Anda'
+    }
+
+    // 4) Tampilkan tombol tambah agar bisa input miliknya
+    btnCreate?.classList.remove('d-none')
   } else {
-    roleBox?.classList.add('d-none')
+    // Staf
+    const canCreate = ['AdminJurusan','Kajur','SuperAdmin'].includes(role)
+    if (!canCreate) btnCreate?.classList.add('d-none')
+
+    if (role === 'SuperAdmin') {
+      roleBox?.classList.remove('d-none')
+      await loadMasters()
+    } else {
+      roleBox?.classList.add('d-none')
+    }
   }
 }
 
@@ -136,12 +178,25 @@ async function loadMasters(){
   }
 }
 
-async function loadKP(pageWant=1){
+// ===== Loader =====
+async function loadKP(pageWant = 1){
   showMsg('Memuat…')
   try{
+    if (role === 'Mahasiswa') {
+      // Shortcut by NIM, tanpa filter & tanpa pagination
+      if (!myNim) { showMsg('Tidak dapat menentukan NIM Anda.'); return }
+      const { data } = await api.get(`/mahasiswa/${encodeURIComponent(myNim)}/kerja-praktek`)
+      const rows = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : [])
+      if (!rows.length) { showMsg('Tidak ada data'); info && (info.textContent='—'); return }
+      renderRows(rows)
+      info && (info.textContent = `Menampilkan ${rows.length} data`)
+      return
+    }
+
+    // Staf: pakai endpoint standar /kp
     let url = `/kp?per_page=30&page=${pageWant}`
-    const kw  = (inpKw?.value || '').trim()
-    const nim = (inpNim?.value || '').trim()
+    const kw   = (inpKw?.value || '').trim()
+    const nim  = (inpNim?.value || '').trim()
     if (kw)  url += `&q=${encodeURIComponent(kw)}`
     if (nim) url += `&nim=${encodeURIComponent(nim)}`
 
@@ -160,43 +215,30 @@ async function loadKP(pageWant=1){
     page = meta.current_page || pageWant
     last = meta.last_page || page
 
-    if (!rows.length){ showMsg('Tidak ada data'); info.textContent='—'; return }
-
-    body.innerHTML = rows.map(r=>{
-      const fileUrl = normalizeFileUrl(r.file_url)
-      return `
-        <tr>
-          <td>${r.id}</td>
-          <td><code>${esc(r.nim || '-')}</code></td>
-          <td>${esc(getNama(r))}</td>
-          <td>${esc(getProdi(r))}</td>
-          <td>${esc(getFak(r))}</td>
-          <td>${esc(r.nama_kegiatan || '-')}</td>
-          <td class="d-flex flex-wrap gap-2">${renderActions({...r, file_url:fileUrl})}</td>
-        </tr>
-      `
-    }).join('')
-
-    info.textContent = meta.total ? `Hal. ${page}/${last} • ${meta.total} data` : `Hal. ${page}`
+    if (!rows.length){ showMsg('Tidak ada data'); info && (info.textContent='—'); return }
+    renderRows(rows)
+    info && (info.textContent = meta.total ? `Hal. ${page}/${last} • ${meta.total} data` : `Hal. ${page}`)
   }catch(err){
     if (isAuthError(err)) {
       auth.clear()
       window.location.replace(LOGIN_URL)
       return
     }
-    const st = err?.response?.status
-    showMsg(st===403 ? 'Anda tidak memiliki akses untuk melihat data ini.' : 'Gagal memuat data.')
+    showMsg(err?.response?.status===403 ? 'Anda tidak memiliki akses untuk melihat data ini.' : 'Gagal memuat data.')
   }
 }
 
-// events
+// ===== Events =====
 $('#kpCari')?.addEventListener('click', ()=>loadKP(1))
 inpKw?.addEventListener('keydown', e=>{ if(e.key==='Enter') loadKP(1) })
-inpNim?.addEventListener('keydown', e=>{ if(e.key==='Enter') loadKP(1) })
-$('#kpPrev')?.addEventListener('click', ()=>{ if(page>1) loadKP(page-1) })
-$('#kpNext')?.addEventListener('click', ()=>{ if(page<last) loadKP(page+1) })
+inpNim?.addEventListener('keydown', e=>{
+  if (role === 'Mahasiswa') return e.preventDefault()
+  if (e.key === 'Enter') loadKP(1)
+})
+btnPrev?.addEventListener('click', ()=>{ if(page>1) loadKP(page-1) })
+btnNext?.addEventListener('click', ()=>{ if(page<last) loadKP(page+1) })
 
-// hapus (SuperAdmin only)
+// Hapus (SuperAdmin only)
 $('#kpBody')?.addEventListener('click', async (e)=>{
   const btn = e.target.closest('button[data-act="del"]')
   if(!btn) return
@@ -215,7 +257,7 @@ $('#kpBody')?.addEventListener('click', async (e)=>{
   }
 })
 
-// boot
+// ===== Init =====
 ;(async function init(){
   try{
     await loadMe()

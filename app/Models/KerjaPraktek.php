@@ -15,7 +15,7 @@ class KerjaPraktek extends Model
      * Eager-load relasi minimal agar aksesors nama_* tidak menimbulkan N+1.
      */
     protected $with = [
-        'mahasiswa:id,nim,nama_mahasiswa,id_prodi',
+        'mahasiswa:nim,nama_mahasiswa,id_prodi',
         'mahasiswa.prodi:id,nama_prodi,id_fakultas',
         'mahasiswa.prodi.fakultas:id,nama_fakultas',
     ];

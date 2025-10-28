@@ -5,6 +5,8 @@ use Illuminate\Support\Facades\Route;
 // Login page (sudah jalan)
 Route::get('/login', fn() => view('pages.login'))->name('login.page');
 
+Route::view('/login/mahasiswa', 'pages.login-mahasiswa')->name('login.mahasiswa');
+
 // Admin shell + halaman dashboard (pakai layout)
 Route::get('/admin', fn () => view('admin.dashboard'))->name('admin.page');
 

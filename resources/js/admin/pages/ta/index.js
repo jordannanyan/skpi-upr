@@ -1,4 +1,3 @@
-// resources/js/admin/pages/ta/index.js
 import { api } from '../../../services/api'
 import { auth } from '../../../services/auth'
 
@@ -16,53 +15,62 @@ const showTableMessage = (msg, cols) => {
   body.innerHTML = `<tr><td colspan="${cols}" class="text-center text-muted p-4">${escapeHtml(msg)}</td></tr>`
 }
 
-// getters tampilan
 const getNamaMhs = (r) => r?.nama_mhs ?? r?.mhs?.nama_mahasiswa ?? r?.mahasiswa?.nama_mahasiswa ?? '-'
-const getProdi = (r) => r?.nama_prodi ?? r?.prodi?.nama_prodi ?? r?.mhs?.prodi?.nama_prodi ?? r?.mahasiswa?.prodi?.nama_prodi ?? '-'
-const getFak = (r) => r?.nama_fakultas ?? r?.prodi?.fakultas?.nama_fakultas ?? r?.mhs?.prodi?.fakultas?.nama_fakultas ?? r?.mahasiswa?.prodi?.fakultas?.nama_fakultas ?? '-'
+const getProdi   = (r) => r?.nama_prodi ?? r?.prodi?.nama_prodi ?? r?.mhs?.prodi?.nama_prodi ?? r?.mahasiswa?.prodi?.nama_prodi ?? '-'
+const getFak     = (r) => r?.nama_fakultas ?? r?.prodi?.fakultas?.nama_fakultas ?? r?.mhs?.prodi?.fakultas?.nama_fakultas ?? r?.mahasiswa?.prodi?.fakultas?.nama_fakultas ?? '-'
 
-// kolom
 const COLS = (() => document.querySelectorAll('table thead th').length || 8)()
 
 let me = null
-let role = 'AdminJurusan' // fallback
+let role = 'AdminJurusan'
+let myNim = null
+
 const bridge = document.getElementById('bridge')
 const ADMIN_URL = bridge?.dataset?.adminUrl || '/admin'
 const LOGIN_URL = bridge?.dataset?.loginUrl || '/login'
 
-// elements
-const body = $('#taBody')
-const inpKw = $('#taKw')
-const inpNim = $('#taNim')
-const selFak = $('#taFak')
-const selPro = $('#taProdi')
+const body    = $('#taBody')
+const btnGoCreate = $('#btnGoCreate')
 
-// === ROLE → default filter (client-side, mirip laporan) ===
+function hideFilterCardForMahasiswa() {
+  document.querySelector('.card.border-0.shadow-sm.mb-3')?.classList.add('d-none')
+}
+
 function roleDefaultFilter(base) {
-  // tambahkan hanya jika id tersedia; hindari param kosong
-  if (role === 'Kajur' && me?.id_prodi) base += '&prodi_id=' + encodeURIComponent(me.id_prodi)
-  if (role === 'AdminJurusan' && me?.id_prodi) base += '&prodi_id=' + encodeURIComponent(me.id_prodi)
+  if (role === 'Kajur'         && me?.id_prodi)    base += '&prodi_id=' + encodeURIComponent(me.id_prodi)
+  if (role === 'AdminJurusan'  && me?.id_prodi)    base += '&prodi_id=' + encodeURIComponent(me.id_prodi)
   if (role === 'AdminFakultas' && me?.id_fakultas) base += '&fakultas_id=' + encodeURIComponent(me.id_fakultas)
-  if (role === 'Wakadek' && me?.id_fakultas) base += '&fakultas_id=' + encodeURIComponent(me.id_fakultas)
-  if (role === 'Dekan' && me?.id_fakultas) base += '&fakultas_id=' + encodeURIComponent(me.id_fakultas)
-  // SuperAdmin: tanpa pembatas
+  if (role === 'Wakadek'       && me?.id_fakultas) base += '&fakultas_id=' + encodeURIComponent(me.id_fakultas)
+  if (role === 'Dekan'         && me?.id_fakultas) base += '&fakultas_id=' + encodeURIComponent(me.id_fakultas)
   return base
 }
 
 async function loadMe() {
   const { data } = await api.get('/me')
-  me = data
+  me   = data
   role = data.role
-  const canCreate = ['AdminJurusan', 'Kajur', 'SuperAdmin'].includes(role)
-  if (!canCreate) $('#btnGoCreate')?.classList.add('d-none')
+  myNim = data?.nim || data?.username || null
+
+  // Mahasiswa: sembunyikan filter, tapi TAMPILKAN tombol Tambah TA agar bisa CRUD dirinya
+  if (role === 'Mahasiswa') {
+    hideFilterCardForMahasiswa()
+    btnGoCreate?.classList.remove('d-none')
+  } else {
+    // non mahasiswa: tetap seperti biasa (boleh tambah bila role tertentu)
+    const canCreate = ['AdminJurusan', 'Kajur', 'SuperAdmin'].includes(role)
+    if (!canCreate) btnGoCreate?.classList.add('d-none')
+  }
 }
 
 async function loadMasters() {
+  if (role === 'Mahasiswa') return
   try {
     const [f, p] = await Promise.all([
       api.get('/fakultas?per_page=100'),
       api.get('/prodi?per_page=200'),
     ])
+    const selFak = document.getElementById('taFak')
+    const selPro = document.getElementById('taProdi')
     const faks = f.data.data || f.data
     const pros = p.data.data || p.data
 
@@ -83,13 +91,12 @@ async function loadMasters() {
       selPro.appendChild(opt)
     })
 
-    // filter prodi by fakultas (client-side)
     const filterProdiByFak = () => {
       const v = selFak.value
-        ;[...selPro.options].forEach((o, i) => {
-          if (i === 0) return
-          o.hidden = (v && (o.dataset.fak || '') !== v)
-        })
+      ;[...selPro.options].forEach((o, i) => {
+        if (i === 0) return
+        o.hidden = (v && (o.dataset.fak || '') !== v)
+      })
       if (v) {
         const cur = selPro.selectedOptions[0]
         if (cur && (cur.dataset.fak || '') !== v) selPro.value = ''
@@ -98,7 +105,6 @@ async function loadMasters() {
     selFak.addEventListener('change', filterProdiByFak)
     filterProdiByFak()
 
-    // sinkronkan dropdown agar user lihat scope yang berlaku
     if (['AdminJurusan', 'Kajur'].includes(role) && me?.id_prodi) {
       selPro.value = String(me.id_prodi)
       const optPro = [...selPro.options].find(o => o.value === String(me.id_prodi))
@@ -112,51 +118,68 @@ async function loadMasters() {
       filterProdiByFak()
     }
   } catch (err) {
-    if (isAuthError(err)) { throw err } // biar ditangani init()
+    if (isAuthError(err)) throw err
     alert(err?.response?.data?.message || err.message || 'Gagal memuat master data')
   }
 }
 
 async function loadTa(pageWant = 1) {
+  const COLS = document.querySelectorAll('table thead th').length || 8
   showTableMessage('Memuat…', COLS)
 
   try {
     let url = `/ta?per_page=50&page=${pageWant}`
-    const kw = (inpKw?.value || '').trim()
-    const nim = (inpNim?.value || '').trim()
-    const fkid = selFak?.value || ''
-    const prid = selPro?.value || ''
 
-    if (kw) url += `&q=${encodeURIComponent(kw)}`
-    if (nim) url += `&nim=${encodeURIComponent(nim)}`
-    if (fkid) url += `&fakultas_id=${encodeURIComponent(fkid)}`
-    if (prid) url += `&prodi_id=${encodeURIComponent(prid)}`
-
-    // tambahkan pembatas berbasis role (client-side)
-    url = roleDefaultFilter(url)
+    if (role === 'Mahasiswa') {
+      if (!myNim) { showTableMessage('Tidak dapat menentukan NIM Anda.', COLS); return }
+      url += `&nim=${encodeURIComponent(myNim)}`
+    } else {
+      const kw   = (document.getElementById('taKw')?.value || '').trim()
+      const nim  = (document.getElementById('taNim')?.value || '').trim()
+      const fkid = document.getElementById('taFak')?.value || ''
+      const prid = document.getElementById('taProdi')?.value || ''
+      if (kw)   url += `&q=${encodeURIComponent(kw)}`
+      if (nim)  url += `&nim=${encodeURIComponent(nim)}`
+      if (fkid) url += `&fakultas_id=${encodeURIComponent(fkid)}`
+      if (prid) url += `&prodi_id=${encodeURIComponent(prid)}`
+      url = roleDefaultFilter(url)
+    }
 
     const { data } = await api.get(url)
     const rows = data.data || data
-
-    if (!rows.length) {
-      showTableMessage('Tidak ada data', COLS)
-      return
-    }
+    if (!rows.length) { showTableMessage('Tidak ada data', COLS); return }
 
     body.innerHTML = rows.map(r => {
-      const nama = escapeHtml(getNamaMhs(r))
-      const prodi = escapeHtml(getProdi(r))
-      const fak = escapeHtml(getFak(r))
+      const nama     = escapeHtml(getNamaMhs(r))
+      const prodi    = escapeHtml(getProdi(r))
+      const fak      = escapeHtml(getFak(r))
       const kategori = escapeHtml(r.kategori ?? r.kategori_ta ?? '-')
-      const judul = escapeHtml(r.judul ?? '-')
+      const judul    = escapeHtml(r.judul ?? '-')
+      const ownRow   = String(r.nim || '') === String(myNim || '')
 
-      // ganti definisi btnDel (kalau ada)
-      const btnDel = (role === 'SuperAdmin') ? `
-  <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
-          data-act="del" data-id="${r.id}"
-          title="Hapus TA" aria-label="Hapus">
-    <i class="bi bi-trash"></i>
-  </button>` : ''
+      let actionHtml = ''
+      if (role === 'Mahasiswa') {
+        // Mahasiswa: hanya boleh HAPUS baris miliknya sendiri
+        actionHtml = ownRow ? `
+          <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
+                  data-act="del" data-id="${r.id}" title="Hapus TA" aria-label="Hapus">
+            <i class="bi bi-trash"></i>
+          </button>
+        ` : '—'
+      } else {
+        // Admin/dosen: tetap seperti sebelumnya
+        actionHtml = `
+          <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
+             href="${ADMIN_URL}/ta/${r.id}/edit" title="Edit TA" aria-label="Edit">
+            <i class="bi bi-pencil-square"></i>
+          </a>
+          ${ (role === 'SuperAdmin') ? `
+          <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
+                  data-act="del" data-id="${r.id}" title="Hapus TA" aria-label="Hapus">
+            <i class="bi bi-trash"></i>
+          </button>` : '' }
+        `
+      }
 
 
       return `
@@ -168,41 +191,27 @@ async function loadTa(pageWant = 1) {
           <td>${fak}</td>
           <td>${kategori}</td>
           <td>${judul}</td>
-          <td class="d-flex flex-wrap gap-2">
-            <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
-              href="${ADMIN_URL}/ta/${r.id}/edit"
-              title="Edit TA" aria-label="Edit">
-              <i class="bi bi-pencil-square"></i>
-            </a>
-            ${btnDel}
-          </td>
-
+          <td class="d-flex flex-wrap gap-2">${actionHtml}</td>
         </tr>
       `
     }).join('')
+
   } catch (err) {
     if (isAuthError(err)) {
-      // auth/token invalid → logout
-      auth.clear()
-      window.location.replace(LOGIN_URL)
-      return
+      auth.clear(); window.location.replace(LOGIN_URL); return
     }
     const st = err?.response?.status
-    if (st === 403) {
-      showTableMessage('Anda tidak memiliki akses untuk melihat data ini.', COLS)
-    } else {
-      showTableMessage('Gagal memuat data.', COLS)
-    }
+    showTableMessage(st === 403 ? 'Anda tidak memiliki akses.' : 'Gagal memuat data.', COLS)
   }
 }
 
 // events
-$('#taCari')?.addEventListener('click', () => loadTa(1))
-inpKw?.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadTa(1) })
-inpNim?.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadTa(1) })
+document.getElementById('taCari')?.addEventListener('click', () => loadTa(1))
+document.getElementById('taKw')  ?.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadTa(1) })
+document.getElementById('taNim') ?.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadTa(1) })
 
-// delete
-$('#taBody')?.addEventListener('click', async (e) => {
+// delete (Mahasiswa hanya boleh hapus miliknya, dicek lagi di backend)
+document.getElementById('taBody')?.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-act="del"]')
   if (!btn) return
   const id = btn.dataset.id
@@ -211,29 +220,23 @@ $('#taBody')?.addEventListener('click', async (e) => {
     await api.delete(`/ta/${id}`)
     await loadTa()
   } catch (err) {
-    if (isAuthError(err)) {
-      auth.clear()
-      window.location.replace(LOGIN_URL)
-      return
-    }
+    if (isAuthError(err)) { auth.clear(); window.location.replace(LOGIN_URL); return }
     alert(err?.response?.data?.message || err.message)
   }
 })
 
-  // init
-  ; (async function init() {
-    try {
-      await loadMe()        // kalau ini gagal karena 401/419 → ke catch di bawah
-      await loadMasters()   // error non-auth tidak memaksa logout
-      await loadTa(1)       // error non-auth tampilkan pesan tabel
-    } catch (err) {
-      if (isAuthError(err)) {
-        auth.clear()
-        window.location.replace(LOGIN_URL)
-      } else {
-        // Jangan logout untuk error lain; tampilkan pesan ramah
-        showTableMessage('Terjadi kesalahan saat inisialisasi halaman.', COLS)
-        console.error(err)
-      }
+// init
+;(async function init() {
+  try {
+    await loadMe()
+    await loadMasters()
+    await loadTa(1)
+  } catch (err) {
+    if (isAuthError(err)) {
+      auth.clear(); window.location.replace(LOGIN_URL)
+    } else {
+      showTableMessage('Terjadi kesalahan saat inisialisasi halaman.', COLS)
+      console.error(err)
     }
-  })()
+  }
+})()
