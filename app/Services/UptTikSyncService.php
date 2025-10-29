@@ -362,6 +362,37 @@ class UptTikSyncService
                 ]);
             }
 
+            // Upsert tugas akhir dari mahasiswa yang memiliki judul_tugas_akhir
+            $tugasAkhirData = $raw
+                ->filter(function ($r) use ($norm) {
+                    $nim = $r['id_mahasiswa'] ?? $r['nim'] ?? null;
+                    $judul = $norm($r['judul_tugas_akhir'] ?? null);
+                    return !empty($nim) && !empty($judul);
+                })
+                ->map(function ($r) use ($norm) {
+                    $nim = (string)($r['id_mahasiswa'] ?? $r['nim']);
+                    $judul = $norm($r['judul_tugas_akhir'] ?? null);
+
+                    return [
+                        'nim'       => $nim,
+                        'kategori'  => 'TA',  // Kategori tidak ada di API, bisa diisi null atau default
+                        'judul'     => $judul,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                })
+                ->unique('nim')  // Satu mahasiswa satu tugas akhir
+                ->values();
+
+            if ($tugasAkhirData->isNotEmpty()) {
+                foreach ($tugasAkhirData->chunk(500) as $chunk) {
+                    DB::table('tugas_akhir')->upsert($chunk->all(), ['nim'], [
+                        'judul',
+                        'updated_at'
+                    ]);
+                }
+            }
+
             return $rows->count();
         } finally {
             optional($lock)->release();
