@@ -9,12 +9,14 @@ class ApprovalLog extends Model
 {
     protected $table = 'approval_logs';
 
-    // Standarisasi action & level
-    public const ACT_SUBMITTED   = 'submitted';
-    public const ACT_VERIFIED    = 'verified';
-    public const ACT_APPROVED    = 'approved';
-    public const ACT_REJECTED    = 'rejected';
-    public const ACT_REGENERATED = 'regenerated';
+    // Standarisasi action & level (sesuai ENUM di database)
+    public const ACT_CREATE          = 'CREATE';
+    public const ACT_SUBMIT          = 'SUBMIT';
+    public const ACT_VERIFY          = 'VERIFY';
+    public const ACT_APPROVE_WAKADEK = 'APPROVE_WAKADEK';
+    public const ACT_APPROVE_DEKAN   = 'APPROVE_DEKAN';
+    public const ACT_REJECT          = 'REJECT';
+    public const ACT_SET_PENGESAHAN  = 'SET_PENGESAHAN';
 
     // 0=submission (AdminJurusan), 1=wakadek, 2=dekan
     public const LVL_SUBMISSION = 0;
