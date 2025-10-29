@@ -142,13 +142,12 @@
             <table class="table table-sm table-hover align-middle">
               <thead class="table-light">
                 <tr>
+                  <th style="width:120px;">Kategori</th>
                   <th>Judul</th>
-                  <th style="width:90px;">Tahun</th>
-                  <th style="width:90px;">Nilai</th>
                 </tr>
               </thead>
               <tbody id="tblTaBody">
-                <tr><td colspan="3" class="text-muted">Memuat…</td></tr>
+                <tr><td colspan="2" class="text-muted">Memuat…</td></tr>
               </tbody>
             </table>
           </div>
@@ -159,13 +158,12 @@
             <table class="table table-sm table-hover align-middle">
               <thead class="table-light">
                 <tr>
-                  <th>Judul/Lokasi</th>
-                  <th style="width:90px;">Tahun</th>
-                  <th style="width:90px;">Nilai</th>
+                  <th>Nama Kegiatan</th>
+                  <th style="width:120px;">File</th>
                 </tr>
               </thead>
               <tbody id="tblKpBody">
-                <tr><td colspan="3" class="text-muted">Memuat…</td></tr>
+                <tr><td colspan="2" class="text-muted">Memuat…</td></tr>
               </tbody>
             </table>
           </div>
@@ -178,10 +176,10 @@
             <table class="table table-sm table-hover align-middle">
               <thead class="table-light">
                 <tr>
-                  <th>Nama Sertifikat</th>
-                  <th>Penyelenggara</th>
+                  <th>Nama Sertifikasi</th>
+                  <th>Kategori</th>
                   <th style="width:90px;">Tahun</th>
-                  <th style="width:140px;">No. Sertifikat</th>
+                  <th style="width:120px;">File</th>
                 </tr>
               </thead>
               <tbody id="tblSertBody">

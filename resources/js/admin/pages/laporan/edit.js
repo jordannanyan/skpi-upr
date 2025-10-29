@@ -221,45 +221,43 @@ async function fetchCpl(nim){
 
 async function fetchTa(nim){
   const tb = $('#tblTaBody')
-  tb.innerHTML = `<tr><td colspan="3" class="text-muted">Memuat…</td></tr>`
+  tb.innerHTML = `<tr><td colspan="2" class="text-muted">Memuat…</td></tr>`
   try{
     const { data } = await api.get(`/mahasiswa/${encodeURIComponent(nim)}/tugas-akhir`)
     const rows = Array.isArray(data) ? data : (data?.data || [])
     if (!rows.length) {
-      tb.innerHTML = `<tr><td colspan="3" class="text-muted">Belum ada data</td></tr>`
+      tb.innerHTML = `<tr><td colspan="2" class="text-muted">Belum ada data</td></tr>`
       return
     }
     tb.innerHTML = rows.map(r => `
       <tr>
+        <td>${esc(r.kategori ?? '-')}</td>
         <td>${esc(r.judul ?? '-')}</td>
-        <td>${esc(r.tahun ?? '-')}</td>
-        <td>${esc(r.nilai ?? '-')}</td>
       </tr>
     `).join('')
   }catch(e){
-    tb.innerHTML = `<tr><td colspan="3" class="text-danger">Gagal memuat data TA</td></tr>`
+    tb.innerHTML = `<tr><td colspan="2" class="text-danger">Gagal memuat data TA</td></tr>`
   }
 }
 
 async function fetchKp(nim){
   const tb = $('#tblKpBody')
-  tb.innerHTML = `<tr><td colspan="3" class="text-muted">Memuat…</td></tr>`
+  tb.innerHTML = `<tr><td colspan="2" class="text-muted">Memuat…</td></tr>`
   try{
     const { data } = await api.get(`/mahasiswa/${encodeURIComponent(nim)}/kerja-praktek`)
     const rows = Array.isArray(data) ? data : (data?.data || [])
     if (!rows.length) {
-      tb.innerHTML = `<tr><td colspan="3" class="text-muted">Belum ada data</td></tr>`
+      tb.innerHTML = `<tr><td colspan="2" class="text-muted">Belum ada data</td></tr>`
       return
     }
     tb.innerHTML = rows.map(r => `
       <tr>
-        <td>${esc(r.judul ?? r.lokasi ?? '-')}</td>
-        <td>${esc(r.tahun ?? '-')}</td>
-        <td>${esc(r.nilai ?? '-')}</td>
+        <td>${esc(r.nama_kegiatan ?? '-')}</td>
+        <td>${r.file_url ? `<a href="${esc(r.file_url)}" target="_blank" class="btn btn-sm btn-outline-primary">Lihat</a>` : '-'}</td>
       </tr>
     `).join('')
   }catch(e){
-    tb.innerHTML = `<tr><td colspan="3" class="text-danger">Gagal memuat data KP</td></tr>`
+    tb.innerHTML = `<tr><td colspan="2" class="text-danger">Gagal memuat data KP</td></tr>`
   }
 }
 
@@ -275,10 +273,10 @@ async function fetchSert(nim){
     }
     tb.innerHTML = rows.map(r => `
       <tr>
-        <td>${esc(r.nama_sertifikat ?? r.nama ?? '-')}</td>
-        <td>${esc(r.penyelenggara ?? r.provider ?? '-')}</td>
-        <td>${esc(r.tahun ?? '-')}</td>
-        <td>${esc(r.nomor ?? r.no_sertifikat ?? '-')}</td>
+        <td>${esc(r.nama_sertifikasi ?? r.nama_sertifikat ?? r.nama ?? '-')}</td>
+        <td>${esc(r.kategori_sertifikasi ?? r.penyelenggara ?? r.provider ?? '-')}</td>
+        <td>${esc(r.created_at ? new Date(r.created_at).getFullYear() : (r.tahun ?? '-'))}</td>
+        <td>${r.file_url ? `<a href="${esc(r.file_url)}" target="_blank" class="btn btn-sm btn-outline-primary">Lihat</a>` : '-'}</td>
       </tr>
     `).join('')
   }catch(e){
