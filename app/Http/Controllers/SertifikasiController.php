@@ -98,17 +98,37 @@ class SertifikasiController extends Controller
         // Pastikan NIM berada di dalam scope user
         $this->assertNimInScope($data['nim'], $user);
 
+		$file = $req->file('file');
+		$safeSlug = Str::slug(substr($data['nama_sertifikasi'], 0, 60), '-');
+		$ext = $file->getClientOriginalExtension();
+		$filename = $data['nim'].'_'.$safeSlug.'_'.Str::random(6).'.'.$ext;
+
         DB::beginTransaction();
         try {
-            // Create Sertifikasi record
-            $file = $req->file('file');
-            $safeSlug = Str::slug(substr($data['nama_sertifikasi'], 0, 60), '-');
-            $ext = $file->getClientOriginalExtension();
-            $filename = $data['nim'].'_'.$safeSlug.'_'.Str::random(6).'.'.$ext;
-
-            /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
             $disk = Storage::disk('public');
+            // Save file locally first
             $disk->putFileAs($dir, $file, $filename);
+
+            // Upload to Google Drive after local save
+            try {
+                $googleDriveService = new \App\Services\GoogleDriveService();
+
+                $localFilePath = Storage::disk('public')->path($dir . '/' . $filename);
+                $mimeType = $file->getMimeType();
+
+                $driveFile = $googleDriveService->uploadFile($localFilePath, $filename, $mimeType);
+
+                // Optional: Log to Google Sheets
+                $googleDriveService->logToSheets(
+                    $driveFile,
+                    "Sertifikasi: {$data['nama_sertifikasi']} - NIM: {$data['nim']}",
+                    $user->name ?? $user->username ?? 'Unknown'
+                );
+
+            } catch (\Exception $e) {
+                // Log error but don't fail the request
+                \Illuminate\Support\Facades\Log::error('Google Drive upload failed: ' . $e->getMessage());
+            }
 
             $sertifikasi = Sertifikasi::create([
                 'nim'                  => $data['nim'],
