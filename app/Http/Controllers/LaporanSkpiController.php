@@ -131,7 +131,7 @@ class LaporanSkpiController extends Controller
             'laporan_id' => $row->id,
             'actor_id' => $user->id,
             'actor_role' => $user->role,
-            'action' => ApprovalLog::ACT_SUBMITTED,
+            'action' => ApprovalLog::ACT_SUBMIT,
             'level' => ApprovalLog::LVL_SUBMISSION,
             'note' => $req->input('catatan'),
         ]);
@@ -166,7 +166,7 @@ class LaporanSkpiController extends Controller
                 'laporan_id' => $row->id,
                 'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action' => ApprovalLog::ACT_VERIFIED,
+                'action' => ApprovalLog::ACT_VERIFY,
                 'level' => ApprovalLog::LVL_SUBMISSION,
                 'note' => $req->input('note'),
             ]);
@@ -176,7 +176,7 @@ class LaporanSkpiController extends Controller
                 'laporan_id' => $row->id,
                 'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action' => ApprovalLog::ACT_REJECTED,
+                'action' => ApprovalLog::ACT_REJECT,
                 'level' => ApprovalLog::LVL_SUBMISSION,
                 'note' => $req->input('note'),
             ]);
@@ -220,7 +220,7 @@ class LaporanSkpiController extends Controller
             'laporan_id' => $row->id,
             'actor_id' => $user->id,
             'actor_role' => $user->role,
-            'action' => ApprovalLog::ACT_VERIFIED, // atau ACT_PENGESAHAN
+            'action' => ApprovalLog::ACT_SET_PENGESAHAN,
             'level' => ApprovalLog::LVL_SUBMISSION,
             'note' => 'Input pengesahan oleh Admin Fakultas',
         ]);
@@ -258,7 +258,7 @@ class LaporanSkpiController extends Controller
                 'laporan_id' => $row->id,
                 'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action' => ApprovalLog::ACT_APPROVED,
+                'action' => ApprovalLog::ACT_APPROVE_WAKADEK,
                 'level' => ApprovalLog::LVL_WAKADEK,
                 'note' => $req->input('note'),
             ]);
@@ -268,7 +268,7 @@ class LaporanSkpiController extends Controller
                 'laporan_id' => $row->id,
                 'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action' => ApprovalLog::ACT_REJECTED,
+                'action' => ApprovalLog::ACT_REJECT,
                 'level' => ApprovalLog::LVL_WAKADEK,
                 'note' => $req->input('note'),
             ]);
@@ -304,7 +304,7 @@ class LaporanSkpiController extends Controller
                 'laporan_id' => $row->id,
                 'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action' => ApprovalLog::ACT_APPROVED,
+                'action' => ApprovalLog::ACT_APPROVE_DEKAN,
                 'level' => ApprovalLog::LVL_DEKAN,
                 'note' => $req->input('note'),
             ]);
@@ -317,7 +317,7 @@ class LaporanSkpiController extends Controller
                 'laporan_id' => $row->id,
                 'actor_id' => $user->id,
                 'actor_role' => $user->role,
-                'action' => ApprovalLog::ACT_REJECTED,
+                'action' => ApprovalLog::ACT_REJECT,
                 'level' => ApprovalLog::LVL_DEKAN,
                 'note' => $req->input('note'),
             ]);
@@ -356,9 +356,9 @@ class LaporanSkpiController extends Controller
             'laporan_id' => $row->id,
             'actor_id' => $user->id,
             'actor_role' => $user->role,
-            'action' => ApprovalLog::ACT_REGENERATED,
+            'action' => ApprovalLog::ACT_CREATE,
             'level' => null,
-            'note' => $req->input('note'),
+            'note' => 'Regenerated: ' . ($req->input('note') ?? 'File regenerated'),
         ]);
 
         return response()->json($row->fresh());
