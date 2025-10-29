@@ -67,8 +67,6 @@ class KerjaPraktekController extends Controller
      */
     public function indexByMahasiswa(string $nim, Request $req)
     {
-        $user = $req->user();
-
         $q = KerjaPraktek::query()
             ->with([
                 'mahasiswa:nim,nama_mahasiswa,id_prodi',
@@ -77,7 +75,8 @@ class KerjaPraktekController extends Controller
             ])
             ->ofNim($nim);
 
-        $this->applyScope($q, $user);
+        // Don't apply scope here - access control should be at the laporan level
+        // If user can view the laporan, they should see all KP data for that mahasiswa
 
         $rows = $q->orderBy('id', 'desc')->get();
 
@@ -104,6 +103,27 @@ class KerjaPraktekController extends Controller
         $filename = $data['nim'] . '_' . $safeSlug . '_' . Str::random(6) . '.' . $ext;
 
         Storage::disk('public')->putFileAs($dir, $file, $filename);
+
+        // Upload to Google Drive
+        try {
+            $googleDriveService = new \App\Services\GoogleDriveService();
+
+            $localFilePath = Storage::disk('public')->path($dir . '/' . $filename);
+            $mimeType = $file->getMimeType();
+
+            $driveFile = $googleDriveService->uploadFile($localFilePath, $filename, $mimeType);
+
+            // Optional: Log to Google Sheets
+            $googleDriveService->logToSheets(
+                $driveFile,
+                "KP: {$data['nama_kegiatan']} - NIM: {$data['nim']}",
+                $user->name ?? $user->username ?? 'Unknown'
+            );
+
+        } catch (\Exception $e) {
+            // Log error but don't fail the request
+            \Illuminate\Support\Facades\Log::error('Google Drive upload failed: ' . $e->getMessage());
+        }
 
         $row = KerjaPraktek::create([
             'nim'             => $data['nim'],
