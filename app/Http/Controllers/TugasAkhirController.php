@@ -73,8 +73,6 @@ class TugasAkhirController extends Controller
      */
     public function indexByMahasiswa(string $nim, Request $req)
     {
-        $user = $req->user();
-
         $q = TugasAkhir::query()
             ->with([
                 'mahasiswa:nim,nama_mahasiswa,id_prodi',
@@ -83,7 +81,8 @@ class TugasAkhirController extends Controller
             ])
             ->ofNim($nim);
 
-        $this->applyScope($q, $user);
+        // Don't apply scope here - access control should be at the laporan level
+        // If user can view the laporan, they should see all TA data for that mahasiswa
 
         $rows = $q->orderBy('id', 'desc')->get();
         return response()->json($rows);
