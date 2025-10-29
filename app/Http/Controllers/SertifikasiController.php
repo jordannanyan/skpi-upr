@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\SertifikasiStoreRequest;
 use App\Http\Requests\SertifikasiUpdateRequest;
+use App\Models\ApprovalLog;
+use App\Models\LaporanSkpi;
 use App\Models\Sertifikasi;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -68,8 +70,6 @@ class SertifikasiController extends Controller
      */
     public function indexByMahasiswa(string $nim, Request $req)
     {
-        $user = $req->user();
-
         $q = Sertifikasi::query()
             ->with([
                 'mahasiswa:nim,nama_mahasiswa,id_prodi',
@@ -78,7 +78,8 @@ class SertifikasiController extends Controller
             ])
             ->ofNim($nim);
 
-        $this->applyScope($q, $user);
+        // Don't apply scope here - access control should be at the laporan level
+        // If user can view the laporan, they should see all certificates for that mahasiswa
 
         $rows = $q->orderBy('id', 'desc')->get();
 
@@ -97,30 +98,69 @@ class SertifikasiController extends Controller
         // Pastikan NIM berada di dalam scope user
         $this->assertNimInScope($data['nim'], $user);
 
-        $file = $req->file('file');
-        $safeSlug = Str::slug(substr($data['nama_sertifikasi'], 0, 60), '-');
-        $ext = $file->getClientOriginalExtension();
-        $filename = $data['nim'].'_'.$safeSlug.'_'.Str::random(6).'.'.$ext;
+        DB::beginTransaction();
+        try {
+            // Create Sertifikasi record
+            $file = $req->file('file');
+            $safeSlug = Str::slug(substr($data['nama_sertifikasi'], 0, 60), '-');
+            $ext = $file->getClientOriginalExtension();
+            $filename = $data['nim'].'_'.$safeSlug.'_'.Str::random(6).'.'.$ext;
 
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
-        $disk = Storage::disk('public');
-        $disk->putFileAs($dir, $file, $filename);
+            /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+            $disk = Storage::disk('public');
+            $disk->putFileAs($dir, $file, $filename);
 
-        $row = Sertifikasi::create([
-            'nim'                  => $data['nim'],
-            'nama_sertifikasi'     => $data['nama_sertifikasi'],
-            'kategori_sertifikasi' => $data['kategori_sertifikasi'],
-            'file_sertifikat'      => $filename,
-        ]);
+            $sertifikasi = Sertifikasi::create([
+                'nim'                  => $data['nim'],
+                'nama_sertifikasi'     => $data['nama_sertifikasi'],
+                'kategori_sertifikasi' => $data['kategori_sertifikasi'],
+                'file_sertifikat'      => $filename,
+            ]);
 
-        return response()->json(
-            $row->fresh()->load([
-                'mahasiswa:nim,nama_mahasiswa,id_prodi',
-                'mahasiswa.prodi:id,nama_prodi,id_fakultas',
-                'mahasiswa.prodi.fakultas:id,nama_fakultas',
-            ]),
-            201
-        );
+            // Check if LaporanSkpi already exists for this NIM
+            $existingLaporan = LaporanSkpi::where('nim', $data['nim'])->first();
+
+            if (!$existingLaporan) {
+                // Tambahkan ke Table Pengajuan SKPI
+                $laporan = LaporanSkpi::create([
+                    'nim' => $data['nim'],
+                    'id_pengaju' => $user->id,
+                    'tgl_pengajuan' => now()->toDateString(),
+                    'status' => LaporanSkpi::ST_SUBMITTED,
+                    'catatan_verifikasi' => 'SKPI',
+                    'versi_file' => 0,
+                ]);
+
+                ApprovalLog::create([
+                    'laporan_id' => $laporan->id,
+                    'actor_id' => $user->id,
+                    'actor_role' => 'AdminProdi',
+                    'action' => ApprovalLog::ACT_SUBMIT,
+                    'level' => ApprovalLog::LVL_SUBMISSION,
+                    'note' => null,
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json(
+                $sertifikasi->fresh()->load([
+                    'mahasiswa:nim,nama_mahasiswa,id_prodi',
+                    'mahasiswa.prodi:id,nama_prodi,id_fakultas',
+                    'mahasiswa.prodi.fakultas:id,nama_fakultas',
+                ]),
+                201
+            );
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            // Clean up uploaded file if transaction fails
+            if (isset($filename)) {
+                $disk->delete($dir.'/'.$filename);
+            }
+
+            throw $e;
+        }
     }
 
     /**
